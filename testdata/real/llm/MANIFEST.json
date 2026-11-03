@@ -1,0 +1,77 @@
+{
+  "repo": "go-wasmcontainers/llm",
+  "commit": "804ca80d5584797395899d3d36b46512b82f2ac4",
+  "licence": "see LICENSE of go-wasmcontainers/llm",
+  "entries": [
+    {
+      "source": "kernels.go",
+      "line": 51,
+      "file": "kernels.go.51.wgsl",
+      "sha256": "f702c6671f1e59c23f6a700e68790e7333eb79e88daef34b8fdf7251513a9624",
+      "kind": "go-string"
+    },
+    {
+      "source": "kernels.go",
+      "line": 77,
+      "file": "kernels.go.77.wgsl",
+      "sha256": "8179c7bc41dbfcdc95dea71a4766f678ff09d2dcf397a118b06ba0d71ca80c13",
+      "kind": "go-string"
+    },
+    {
+      "source": "kernels.go",
+      "line": 112,
+      "file": "kernels.go.112.wgsl",
+      "sha256": "9e7d7a8af30ff858398a49b9b3605926a74ee0cf8cd15227e9d2b3e6f4d72812",
+      "kind": "go-string"
+    },
+    {
+      "source": "kernels.go",
+      "line": 150,
+      "file": "kernels.go.150.wgsl",
+      "sha256": "c45e38eb627d31e95d06b729e4ffec81877ee5db9b81a3c9ad08004d8178d87d",
+      "kind": "go-string"
+    },
+    {
+      "source": "kernels.go",
+      "line": 192,
+      "file": "kernels.go.192.wgsl",
+      "sha256": "5cd127f1f644673d8a6d4e15a31e5b37a19ee0b8916c78f08ea160188391bda3",
+      "kind": "go-string"
+    },
+    {
+      "source": "kernels.go",
+      "line": 232,
+      "file": "kernels.go.232.wgsl",
+      "sha256": "25e91c812d16a6cbeda0362a1f93ae980a307e7c072cd77d4dc5d9d758fba0a2",
+      "kind": "go-string"
+    },
+    {
+      "source": "kernels.go",
+      "line": 280,
+      "file": "kernels.go.280.wgsl",
+      "sha256": "206af9153f3b6ac093433e2cc096ceb88b3c3803941326db2efefbaff6d3065f",
+      "kind": "go-string"
+    },
+    {
+      "source": "kernels.go",
+      "line": 337,
+      "file": "kernels.go.337.wgsl",
+      "sha256": "7057d73b052227245be7a5a6d15461f7be6c78462ae6475bda3fc8e01e3eb123",
+      "kind": "go-string"
+    },
+    {
+      "source": "kernels.go",
+      "line": 356,
+      "file": "kernels.go.356.wgsl",
+      "sha256": "45ad78cac7db54e264ea5e8cdd1195267302edf95925bc7c3e8f063b22c46910",
+      "kind": "go-string"
+    },
+    {
+      "source": "kernels.go",
+      "line": 399,
+      "file": "kernels.go.399.wgsl",
+      "sha256": "f25bf398e00432917df36ea36630a0f4df67fede4232fd81a3846df14d743b8f",
+      "kind": "go-string"
+    }
+  ]
+}

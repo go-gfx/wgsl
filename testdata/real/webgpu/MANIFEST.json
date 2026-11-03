@@ -1,0 +1,77 @@
+{
+  "repo": "go-gfx/webgpu",
+  "commit": "2d6170e5df3f0365af117399ecb6bafbbfe69051",
+  "licence": "see LICENSE of go-gfx/webgpu",
+  "entries": [
+    {
+      "source": "descwire_test.go",
+      "line": 57,
+      "file": "descwire_test.go.57.wgsl",
+      "sha256": "a896fc385b468ad1df5c8ee8d8470121efa07e464a1c3049c665332cdc297912",
+      "kind": "go-string"
+    },
+    {
+      "source": "record_js_test.go",
+      "line": 211,
+      "file": "record_js_test.go.211.wgsl",
+      "sha256": "ee7fbeeeda816c0d1f5b9243cbde9832fe7bfcaf15f09afdcdae0b345375970d",
+      "kind": "go-string"
+    },
+    {
+      "source": "record_js_test.go",
+      "line": 292,
+      "file": "record_js_test.go.292.wgsl",
+      "sha256": "11fde60609e67ad8d6d01a5afe999ae6c9d213e74aeceb76764f6b05f166294b",
+      "kind": "go-string"
+    },
+    {
+      "source": "remote_test.go",
+      "line": 68,
+      "file": "remote_test.go.68.wgsl",
+      "sha256": "a896fc385b468ad1df5c8ee8d8470121efa07e464a1c3049c665332cdc297912",
+      "kind": "go-string"
+    },
+    {
+      "source": "webgpu_js_test.go",
+      "line": 286,
+      "file": "webgpu_js_test.go.286.wgsl",
+      "sha256": "ce3b95c447588ad5dc4c3f293c1c723d552376cc3562a90277f6459dc37a21f1",
+      "kind": "go-string"
+    },
+    {
+      "source": "webgpu_js_test.go",
+      "line": 585,
+      "file": "webgpu_js_test.go.585.wgsl",
+      "sha256": "5fab9db291afa451cbffd016e0e29310737743db0a1eec6fdb3e4f98b521cb3b",
+      "kind": "go-string"
+    },
+    {
+      "source": "batch/device_js_test.go",
+      "line": 77,
+      "file": "batch__device_js_test.go.77.wgsl",
+      "sha256": "ff512001a9f07157d832746fb51a81aaf3b3f904ba5b8ebef5232f5aa6875481",
+      "kind": "go-string"
+    },
+    {
+      "source": "batch/device_js_test.go",
+      "line": 247,
+      "file": "batch__device_js_test.go.247.wgsl",
+      "sha256": "410ec9bc2d14226a4dd4d8d1c5582dbf99869c1167986dd3a6b3aa929f364c55",
+      "kind": "go-string"
+    },
+    {
+      "source": "batch/device_js_test.go",
+      "line": 249,
+      "file": "batch__device_js_test.go.249.wgsl",
+      "sha256": "550add2c204cc4867610ac119d0f96f4cad5ffbfbd988a4aac1907d371555d1a",
+      "kind": "go-string"
+    },
+    {
+      "source": "batch/device_js_test.go",
+      "line": 250,
+      "file": "batch__device_js_test.go.250.wgsl",
+      "sha256": "35eccb172cfdd9d62850b31d8c9bbbf576480deb2fa05fb10e3d3a99a43a561a",
+      "kind": "go-string"
+    }
+  ]
+}

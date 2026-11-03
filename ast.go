@@ -275,7 +275,7 @@ type (
 	// as the type specifier node: `array<vec4<f32>, 4>`.
 	Ident struct {
 		Span
-		Name string
+		Name  string
 		Targs []Expr
 	}
 	// Call is a call or constructor expression: callee(args).

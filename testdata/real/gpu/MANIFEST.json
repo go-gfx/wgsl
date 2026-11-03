@@ -1,0 +1,124 @@
+{
+  "repo": "go-wasmcontainers/gpu",
+  "commit": "d3302ccb3002f040da618120e6b7bb901b1d3f5d",
+  "licence": "see LICENSE of go-wasmcontainers/gpu",
+  "entries": [
+    {
+      "source": "examples/triangle/main.go",
+      "line": 24,
+      "file": "examples__triangle__main.go.24.wgsl",
+      "sha256": "b4c0125e46cc3da1d613c7715b5ce587a7a5dbc6a746316b8c58cd099d081059",
+      "kind": "go-string"
+    },
+    {
+      "source": "e2e/testdata/hang/main.go",
+      "line": 26,
+      "kind": "template"
+    },
+    {
+      "source": "gpubatch/module_test.go",
+      "line": 617,
+      "file": "gpubatch__module_test.go.617.wgsl",
+      "sha256": "41566d5dda3d1f688813fdf0bf7860eb9b57a59b29f758c10c69164edfd0990a",
+      "kind": "go-string"
+    },
+    {
+      "source": "gpubatch/module_test.go",
+      "line": 619,
+      "file": "gpubatch__module_test.go.619.wgsl",
+      "sha256": "550add2c204cc4867610ac119d0f96f4cad5ffbfbd988a4aac1907d371555d1a",
+      "kind": "go-string"
+    },
+    {
+      "source": "gpubatch/module_test.go",
+      "line": 643,
+      "file": "gpubatch__module_test.go.643.wgsl",
+      "sha256": "41566d5dda3d1f688813fdf0bf7860eb9b57a59b29f758c10c69164edfd0990a",
+      "kind": "go-string"
+    },
+    {
+      "source": "examples/compute/main.go",
+      "line": 24,
+      "file": "examples__compute__main.go.24.wgsl",
+      "sha256": "a1ae6d393012834119bcf37eaafc63ce40b840d6e358a06f08bd7f633183d209",
+      "kind": "go-string"
+    },
+    {
+      "source": "examples/compute/main.go",
+      "line": 33,
+      "file": "examples__compute__main.go.33.wgsl",
+      "sha256": "1515e5dcb0352f6ea9cf4cb9e274907dcf676f4a7cce06bd1d0edf6cc570fece",
+      "kind": "go-string"
+    },
+    {
+      "source": "nn/webgpu/kernels.go",
+      "line": 28,
+      "file": "nn__webgpu__kernels.go.28.wgsl",
+      "sha256": "c52c8fb977b9c1ba5724909d25d867f7c684902397c53d81b157e8c422f70850",
+      "kind": "assembled"
+    },
+    {
+      "source": "nn/webgpu/kernels.go",
+      "line": 49,
+      "file": "nn__webgpu__kernels.go.49.wgsl",
+      "sha256": "e2ec88758701cd77a1bada57d75bd0a7cab4f34b6501e131688b47fd97f59354",
+      "kind": "go-string"
+    },
+    {
+      "source": "nn/webgpu/kernels.go",
+      "line": 61,
+      "file": "nn__webgpu__kernels.go.61.wgsl",
+      "sha256": "e929021a26e47b319e3c4649aa05397e68921b79fc19302205f5944dabf39d4d",
+      "kind": "go-string"
+    },
+    {
+      "source": "nn/webgpu/kernels.go",
+      "line": 91,
+      "file": "nn__webgpu__kernels.go.91.wgsl",
+      "sha256": "9552692555c2d3610958b52576ff5100e1984ce0b31fdbf845c8b08e0fa1225b",
+      "kind": "go-string"
+    },
+    {
+      "source": "nn/webgpu/kernels.go",
+      "line": 133,
+      "file": "nn__webgpu__kernels.go.133.wgsl",
+      "sha256": "1273306ac9c3702c80d2428f75c79abd3ea1d4d9a13ef19821164a7926b47a43",
+      "kind": "go-string"
+    },
+    {
+      "source": "nn/webgpu/kernels.go",
+      "line": 174,
+      "file": "nn__webgpu__kernels.go.174.wgsl",
+      "sha256": "12329069836952714a968d194842e345fd809d5201968b81e25c4e912ecba840",
+      "kind": "go-string"
+    },
+    {
+      "source": "nn/webgpu/kernels.go",
+      "line": 192,
+      "file": "nn__webgpu__kernels.go.192.wgsl",
+      "sha256": "6b79262c5a28b42473b11f90553a19b3bbafd5afe0d57f1cabe2e56f97389b58",
+      "kind": "go-string"
+    },
+    {
+      "source": "examples/batchcompute/main.go",
+      "line": 46,
+      "file": "examples__batchcompute__main.go.46.wgsl",
+      "sha256": "ff512001a9f07157d832746fb51a81aaf3b3f904ba5b8ebef5232f5aa6875481",
+      "kind": "go-string"
+    },
+    {
+      "source": "examples/batchcompute/main.go",
+      "line": 322,
+      "file": "examples__batchcompute__main.go.322.wgsl",
+      "sha256": "410ec9bc2d14226a4dd4d8d1c5582dbf99869c1167986dd3a6b3aa929f364c55",
+      "kind": "go-string"
+    },
+    {
+      "source": "examples/batchcompute/main.go",
+      "line": 323,
+      "file": "examples__batchcompute__main.go.323.wgsl",
+      "sha256": "550add2c204cc4867610ac119d0f96f4cad5ffbfbd988a4aac1907d371555d1a",
+      "kind": "go-string"
+    }
+  ]
+}
