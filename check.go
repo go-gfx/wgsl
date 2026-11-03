@@ -223,11 +223,13 @@ var AllLanguageFeatures = []string{"readonly_and_readwrite_storage_textures", "p
 	"atomic_vec2u_min_max"}
 
 // DefaultLanguageFeatures is every language extension this checker
-// implements: all but buffer_view and swizzle_assignment.
+// implements: all but buffer_view and swizzle_assignment (not implemented)
+// and uniform_buffer_standard_layout (a module opts in with a requires
+// directive, so that the strict uniform layout rules are the default).
 func DefaultLanguageFeatures() map[string]bool {
 	m := map[string]bool{}
 	for _, f := range AllLanguageFeatures {
-		if f != "buffer_view" && f != "swizzle_assignment" {
+		if f != "buffer_view" && f != "swizzle_assignment" && f != "uniform_buffer_standard_layout" {
 			m[f] = true
 		}
 	}

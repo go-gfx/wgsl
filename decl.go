@@ -123,6 +123,15 @@ func (c *checker) directives() {
 			}
 		case "requires":
 			for _, n := range d.Names {
+				if n == "uniform_buffer_standard_layout" && !c.lang[n] {
+					// not on by default; a module that requires it opts in
+					l := map[string]bool{}
+					for k, v := range c.lang {
+						l[k] = v
+					}
+					l[n] = true
+					c.lang = l
+				}
 				if !c.lang[n] {
 					c.err(d, "unknown-extension", "unsupported language extension %q", n)
 				}
@@ -668,7 +677,7 @@ func vecMatName(name string) (kind byte, dims [2]int, elem *ScalarType, ok bool)
 		e, ok := suffix(name[4:])
 		return 'v', [2]int{int(name[3] - '0'), 0}, e, ok
 	}
-	if len(name) >= 7 && name[:3] == "mat" && name[3] >= '2' && name[3] <= '4' && name[4] == 'x' && name[5] >= '2' && name[5] <= '4' {
+	if len(name) >= 6 && name[:3] == "mat" && name[3] >= '2' && name[3] <= '4' && name[4] == 'x' && name[5] >= '2' && name[5] <= '4' {
 		e, ok := suffix(name[6:])
 		if e == I32 || e == U32 {
 			ok = false

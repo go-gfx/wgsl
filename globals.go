@@ -415,9 +415,6 @@ func (c *checker) globalVar(o *VarObj) {
 	if containsAtomicVec2u(store) && as != ASStorage {
 		c.err(d, "var-type", "atomic<vec2<u32>> requires the storage address space")
 	}
-	if tt, ok := store.(*TextureType); ok && tt.Kind == TexStorage {
-		o.Access = tt.Access
-	}
 	// resource attributes
 	resource := as == ASUniform || as == ASStorage || as == ASHandle
 	ga, ba := c.findAttr(d.Attrs, "group"), c.findAttr(d.Attrs, "binding")

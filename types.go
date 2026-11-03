@@ -557,14 +557,19 @@ func constructible(t Type) bool {
 	case *ArrayType:
 		return !t.Runtime && t.Override == nil && constructible(t.Elem)
 	case *StructType:
-		if t.Predeclared {
-			return false
-		}
 		for _, m := range t.Members {
-			if !constructible(m.Type) {
+			if !constructible(m.Type) && !(t.Predeclared && IsAbstract(m.Type) == false && isScalarOrVec(m.Type)) {
 				return false
 			}
 		}
+		return !(t.Predeclared && IsAbstract(t))
+	}
+	return false
+}
+
+func isScalarOrVec(t Type) bool {
+	switch t.(type) {
+	case *ScalarType, *VecType:
 		return true
 	}
 	return false

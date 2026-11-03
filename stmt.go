@@ -105,20 +105,23 @@ func (c *checker) stmt(s Stmt) behavior {
 	case *CallStmt:
 		v := c.callExpr(s.Call)
 		c.info.Types[s.Call] = v.t
-		if o, ok := c.info.Objects[s.Call.Fn].(*FuncObj); ok {
+		switch o := c.info.Objects[s.Call.Fn].(type) {
+		case *FuncObj:
 			for _, a := range o.Decl.Attrs {
 				if a.Name == "must_use" {
 					c.err(s, "must-use", "the result of %q must be used", o.Name)
 				}
 			}
-		} else if b := builtinFuncs[s.Call.Fn.Name]; b != nil && b.mustUse {
-			if _, isBuiltin := c.info.Objects[s.Call.Fn].(*BuiltinObj); isBuiltin {
-				c.err(s, "must-use", "the result of %q must be used", s.Call.Fn.Name)
+		case *BuiltinObj:
+			if b := builtinFuncs[s.Call.Fn.Name]; b != nil {
+				if b.mustUse {
+					c.err(s, "must-use", "the result of %q must be used", s.Call.Fn.Name)
+				}
+			} else if !isInvalid(v.t) {
+				c.err(s, "must-use", "the result of a value constructor must be used")
 			}
-		} else if !isInvalid(v.t) && v.t != Void {
-			if _, isBuiltin := c.info.Objects[s.Call.Fn].(*BuiltinObj); isBuiltin {
-				c.err(s, "must-use", "the result of the constructor must be used")
-			}
+		case *TypeObj:
+			c.err(s, "must-use", "the result of a value constructor must be used")
 		}
 		return bNext
 	case *Return:

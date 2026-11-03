@@ -28,11 +28,12 @@ func clean(s string) string {
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: specbuiltins index.bs")
+	names := len(os.Args) == 3 && os.Args[1] == "-names"
+	if len(os.Args) != 2 && !names {
+		fmt.Fprintln(os.Stderr, "usage: specbuiltins [-names] index.bs")
 		os.Exit(2)
 	}
-	f, err := os.Open(os.Args[1])
+	f, err := os.Open(os.Args[len(os.Args)-1])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -50,7 +51,17 @@ func main() {
 	for i := first; i < len(lines); i++ {
 		l := lines[i]
 		if m := heading.FindStringSubmatch(l); m != nil {
+			if names {
+				if h := m[1]; strings.HasPrefix(h, "`") {
+					n := strings.Trim(strings.Fields(h)[0], "`")
+					fmt.Fprintln(out, n)
+				}
+				continue
+			}
 			fmt.Fprintf(out, "\n== %s (line %d)\n", m[1], i+1)
+			continue
+		}
+		if names {
 			continue
 		}
 		if !strings.Contains(l, ">Overload") {
