@@ -1,0 +1,150 @@
+{
+ "cts_repo": "https://github.com/gpuweb/cts",
+ "cts_commit": "d116bcccd1833369fa3715a6df503c0dd9b0d7fa",
+ "query": "webgpu:shader,validation,*",
+ "records": 629337,
+ "cts_cases": 47576,
+ "case_errors": [],
+ "distinct": 384053,
+ "status_counts": {
+  "run": 289741,
+  "skipped-device": 2815,
+  "skipped-uniformity": 91497
+ },
+ "packs": [
+  {
+   "group": "const_assert",
+   "file": "const_assert.jsonl.gz",
+   "sha256": "8adec65317942c6f9c937319da774dd86437dc3c3cdd636ab6e56bbdd800b502",
+   "cases": 2670,
+   "status": {
+    "run": 2670
+   },
+   "expected": {
+    "fail": 1336,
+    "pass": 1334
+   }
+  },
+  {
+   "group": "decl",
+   "file": "decl.jsonl.gz",
+   "sha256": "fbc53de1f372508e9f567f1bf1e9f6a4cfbdd340df9ec6da3a80d83151c54a7d",
+   "cases": 2817,
+   "status": {
+    "run": 2814,
+    "skipped-uniformity": 3
+   },
+   "expected": {
+    "fail": 2035,
+    "pass": 779
+   }
+  },
+  {
+   "group": "expression",
+   "file": "expression.jsonl.gz",
+   "sha256": "70362c5f94dd559fbba4a365c58ed02a75d0d2446ffda424f4175d019f71c552",
+   "cases": 264241,
+   "status": {
+    "run": 261653,
+    "skipped-device": 2588
+   },
+   "expected": {
+    "fail": 138659,
+    "pass": 122994
+   }
+  },
+  {
+   "group": "extension",
+   "file": "extension.jsonl.gz",
+   "sha256": "a9144dcebc01c22a612ba772b7fa3685de4139c4d5456215d399bb3afe5daf31",
+   "cases": 532,
+   "status": {
+    "run": 489,
+    "skipped-device": 43
+   },
+   "expected": {
+    "fail": 284,
+    "pass": 205
+   }
+  },
+  {
+   "group": "functions",
+   "file": "functions.jsonl.gz",
+   "sha256": "b58e60c0ec0497fc87760eb8ddc248bf1a5e7167cf372af05c6b6b25fc132438",
+   "cases": 10233,
+   "status": {
+    "run": 10233
+   },
+   "expected": {
+    "fail": 9626,
+    "pass": 607
+   }
+  },
+  {
+   "group": "parse",
+   "file": "parse.jsonl.gz",
+   "sha256": "c7b453a5eb0429c2d7c5a3b6661a07785930dc73f02f42648e27304d6106ecfe",
+   "cases": 4448,
+   "status": {
+    "run": 4279,
+    "skipped-device": 2,
+    "skipped-uniformity": 167
+   },
+   "expected": {
+    "fail": 2621,
+    "pass": 1658
+   }
+  },
+  {
+   "group": "shader_io",
+   "file": "shader_io.jsonl.gz",
+   "sha256": "7d4383775d45f2b49df5edf78323a5216f908d0226490a7a19430c68209e9397",
+   "cases": 4930,
+   "status": {
+    "run": 4750,
+    "skipped-device": 180
+   },
+   "expected": {
+    "fail": 3256,
+    "pass": 1494
+   }
+  },
+  {
+   "group": "statement",
+   "file": "statement.jsonl.gz",
+   "sha256": "daabb6f37b0e1a6bdff80347969972afecf7c3c451335fbf33e946f96b4f65b1",
+   "cases": 1062,
+   "status": {
+    "run": 1062
+   },
+   "expected": {
+    "fail": 715,
+    "pass": 347
+   }
+  },
+  {
+   "group": "types",
+   "file": "types.jsonl.gz",
+   "sha256": "28f664430fddf2a893536dd4f24db023aba4050e555622cbfd46176c9a5e05f6",
+   "cases": 1793,
+   "status": {
+    "run": 1791,
+    "skipped-device": 2
+   },
+   "expected": {
+    "fail": 1152,
+    "pass": 639
+   }
+  },
+  {
+   "group": "uniformity",
+   "file": "uniformity.jsonl.gz",
+   "sha256": "2f3c4e6c0eb3e2ed24ac3d3918244be5f753e37cc0f18e1c464467ab4d13b04a",
+   "cases": 91327,
+   "status": {
+    "skipped-uniformity": 91327
+   },
+   "expected": {}
+  }
+ ]
+}
