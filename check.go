@@ -1,8 +1,8 @@
 // Name resolution and type checking for WGSL modules.
 //
 // Check implements the shader-creation rules of the WGSL Candidate
-// Recommendation Draft of 26 October 2026 (see SPEC.md and the section list
-// in CHECK.md): declaration and scope, types and automatic conversions,
+// Recommendation Draft of 26 October 2026 (see SPEC.md for the sections
+// read): declaration and scope, types and automatic conversions,
 // expression and statement typing, built-in functions, address spaces and
 // access modes, attributes and entry point interfaces, const- and
 // override-expressions, const_assert, behavior analysis (return, break,

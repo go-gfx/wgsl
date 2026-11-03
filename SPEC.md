@@ -15,6 +15,23 @@ The normative text was read from its source, gpuweb/gpuweb at commit
 | Keywords | `wgsl/index.bs`, "Keyword Summary" |
 | Reserved words | `wgsl/wgsl.reserved.plain`, turned into `reserved_gen.go` by `internal/genreserved` |
 
+The checker (`check*.go`, `decl.go`, `expr.go`, `stmt.go`, `builtins*.go`,
+`entry.go`, `globals.go`) was written from these sections of the same
+`wgsl/index.bs`: Errors, Diagnostics, Limits, Extensions (enable and
+language), Declaration and Scope, Types (type checking, conversion rank,
+overload resolution, plain types, memory views, textures, aliases,
+predeclared types), Variable and Value Declarations, Early Evaluation
+Expressions, Expressions, Statements (assignment, control flow, behavior
+analysis, const assertions), Functions, Attributes, Entry Points, Memory
+(address spaces, memory layout, layout constraints), Floating Point
+Evaluation (overflow, conversion), and the built-in function overload tables
+(`go run ./internal/specbuiltins` prints them).
+
+Checker limits: uniformity analysis, alias analysis of pointer arguments, and
+the `buffer_view` and `swizzle_assignment` language extensions are not
+implemented; `uniform_buffer_standard_layout` is enabled by a `requires`
+directive only. See the package comment in `check.go`.
+
 Known deviations, all documented where they occur:
 
 * Identifier classes use Go's `unicode` tables (ID_Start/ID_Continue) as an
