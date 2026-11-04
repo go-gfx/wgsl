@@ -45,7 +45,8 @@ wgsl fmt -w shader.wgsl            # canonical formatting
 
 **The browser remains the validation authority.** `Validate` and `wgsl check`
 are not yet a security boundary: against the CTS they still wrongly accept
-7,432 invalid cases and wrongly reject 866 valid ones (see
+88 invalid cases (uniformity analysis is missing, so its 91,497 cases are
+skipped) and wrongly reject none of the 130,057 valid ones (see
 [docs/CONFORMANCE.md](docs/CONFORMANCE.md)). Use them for early, positioned
 diagnostics (for example the reserved word `meta`), never to decide that a
 guest shader is safe, and never to refuse a shader on their word alone.

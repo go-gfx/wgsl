@@ -40,6 +40,8 @@ func builtinSpecs(name string) []builtinSpec {
 		return []builtinSpec{{StageCompute, true, u32, "subgroups", ""}, {StageFragment, true, u32, "subgroups", ""}}
 	case "subgroup_id", "num_subgroups":
 		return []builtinSpec{{StageCompute, true, u32, "subgroups", "subgroup_id"}}
+	case "primitive_id": // Chromium's experimental extension (CTS shader_io,builtins)
+		return []builtinSpec{{StageFragment, true, u32, "chromium_experimental_primitive_id", ""}}
 	case "primitive_index":
 		return []builtinSpec{{StageFragment, true, u32, "primitive_index", ""}}
 	case "clip_distances":

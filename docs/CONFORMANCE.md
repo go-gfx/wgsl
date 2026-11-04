@@ -72,7 +72,36 @@ error as syntactic.
 The numbers are those of the committed baseline; they are expected to improve
 (false accepts to fall) as the checker lands.
 
-## Results with the v0.1.0 checker (validate = Parse + Check)
+## Results with the v0.4.0 checker (validate = Parse + Check)
+
+| directory | total | skipped | pass accepted | fail rejected | false reject | false accept |
+|---|---:|---:|---:|---:|---:|---:|
+| const_assert | 2670 | 0 | 1334 | 1336 | 0 | 0 |
+| decl | 2817 | 3 | 779 | 2034 | 0 | 1 |
+| expression | 264241 | 2588 | 122994 | 138610 | 0 | 49 |
+| extension | 532 | 43 | 205 | 278 | 0 | 6 |
+| functions | 10233 | 0 | 607 | 9624 | 0 | 2 |
+| parse | 4448 | 169 | 1658 | 2609 | 0 | 12 |
+| shader_io | 4930 | 180 | 1494 | 3253 | 0 | 3 |
+| statement | 1062 | 0 | 347 | 713 | 0 | 2 |
+| types | 1793 | 2 | 639 | 1139 | 0 | 13 |
+| uniformity | 91327 | 91327 | 0 | 0 | 0 | 0 |
+| **total** | 384053 | 94312 | 130057 | 159596 | **0** | **88** |
+
+289,653 of 289,741 runnable cases (99.97 %) have the expected verdict. The v0.4.0
+work removed all 866 false rejects (abstract `frexp`/`modf` results, `abs` of
+the most negative AbstractInt, scalar `length`/`distance`, `radians` of huge
+values, constant `bitcast` including f16 forms, `chromium_experimental_primitive_id`,
+and `ldexp` of an abstract operand with a concrete `i32` exponent, which the CTS
+evaluates as abstract although the spec note says the operand is converted to
+a concrete type) and 7,344 of 7,432 false accepts (per-operation overflow
+checking for vector `length`, `normalize`, `cross`, `dot`, `reflect`, `refract`,
+`faceForward`, `mix`, `pow` domain, `ldexp` overflow, constant zero divisor and
+constant over-wide shift count in compound assignments and with a runtime
+left operand). The 88 false accepts left are listed by `internal/ctsreport`;
+uniformity analysis is not implemented.
+
+## Results with the v0.1.0 checker (historical)
 
 | directory | total | skipped | pass accepted | fail rejected | false reject | false accept |
 |---|---:|---:|---:|---:|---:|---:|

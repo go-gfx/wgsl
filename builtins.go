@@ -2,6 +2,7 @@ package wgsl
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -154,9 +155,9 @@ func init() {
 	reg(&builtinFn{name: "dot", mustUse: true, isConst: true, cands: fixed(dot...), eval: evalGeneric("dot")})
 	reg(&builtinFn{name: "cross", mustUse: true, isConst: true, cands: fixed(cross...), eval: evalGeneric("cross")})
 	reg(&builtinFn{name: "normalize", mustUse: true, isConst: true, cands: fixed(norm...), eval: evalGeneric("normalize")})
-	reg(&builtinFn{name: "faceForward", mustUse: true, isConst: true, cands: fixed(ff...)})
-	reg(&builtinFn{name: "reflect", mustUse: true, isConst: true, cands: fixed(refl...)})
-	reg(&builtinFn{name: "refract", mustUse: true, isConst: true, cands: fixed(refr...)})
+	reg(&builtinFn{name: "faceForward", mustUse: true, isConst: true, cands: fixed(ff...), eval: evalGeneric("faceForward")})
+	reg(&builtinFn{name: "reflect", mustUse: true, isConst: true, cands: fixed(refl...), eval: evalGeneric("reflect")})
+	reg(&builtinFn{name: "refract", mustUse: true, isConst: true, cands: fixed(refr...), eval: evalGeneric("refract")})
 	// mix
 	mix := ternary(floatT)
 	for _, s := range floatsAll {
@@ -168,13 +169,13 @@ func init() {
 	reg(&builtinFn{name: "mix", mustUse: true, isConst: true, cands: fixed(mix...), eval: evalGeneric("mix")})
 	// ldexp
 	var ld []sig
-	for _, p := range [][2]*ScalarType{{AbstractFloat, AbstractInt}, {F32, I32}, {F16, I32}} {
+	for _, p := range [][2]*ScalarType{{AbstractFloat, AbstractInt}, {AbstractFloat, I32}, {F32, I32}, {F16, I32}} {
 		ld = append(ld, sig{params: []Type{p[0], p[1]}, ret: p[0]})
 		for n := 2; n <= 4; n++ {
 			ld = append(ld, sig{params: []Type{&VecType{n, p[0]}, &VecType{n, p[1]}}, ret: &VecType{n, p[0]}})
 		}
 	}
-	reg(&builtinFn{name: "ldexp", mustUse: true, isConst: true, cands: fixed(ld...)})
+	reg(&builtinFn{name: "ldexp", mustUse: true, isConst: true, cands: fixed(ld...), eval: evalGeneric("ldexp")})
 	// matrices
 	var det, tr []sig
 	for _, s := range floatsAll {
@@ -609,7 +610,7 @@ func (c *checker) bitcast(e *Call) *val {
 		if t.N == 2 && t.Elem == F16 && (a.t == U32 || a.t == I32 || a.t == F32 || a.t == AbstractInt) {
 			ok = true
 		}
-		if t.N == 4 && t.Elem == F16 && Same(a.t, vec(2, U32)) {
+		if av, isV := a.t.(*VecType); t.N == 4 && t.Elem == F16 && isV && av.N == 2 && okScalar(av.Elem) {
 			ok = true
 		}
 		if t.N == 2 && okScalar(t.Elem) && Same(a.t, vec(4, F16)) {
@@ -635,7 +636,136 @@ func (c *checker) bitcast(e *Call) *val {
 	if IsAbstract(a.t) {
 		a = c.convertTo(a, concreteFor(a.t, to))
 	}
+	if a.k == kConst && a.c != nil {
+		k, msg := bitcastConst(to, a.c)
+		if msg != "" {
+			c.err(e, "const-overflow", "%s", msg)
+			return invalidVal()
+		}
+		if k != nil {
+			return &val{t: to, k: kConst, c: k}
+		}
+	}
 	return &val{t: to, k: kRuntime}
+}
+
+// bitcastConst evaluates bitcast<to>(a) for a constant a by reinterpreting
+// its little-endian component bytes (spec "bitcast"). It returns nil, "" when
+// the operand types are not handled, and a message when the result is not a
+// finite floating point value (a shader-creation error).
+func bitcastConst(to Type, a *Const) (*Const, string) {
+	size := func(s *ScalarType) int {
+		if s == F16 {
+			return 2
+		}
+		return 4
+	}
+	srcS, dstS := scalarOf(a.Type), scalarOf(to)
+	if srcS == nil || dstS == nil || srcS == AbstractInt || srcS == AbstractFloat {
+		return nil, ""
+	}
+	n := 1
+	if v, ok := a.Type.(*VecType); ok {
+		n = v.N
+	}
+	var buf []byte
+	for i := 0; i < n; i++ {
+		k := a
+		if _, ok := a.Type.(*VecType); ok {
+			k = a.Elem(int64(i))
+		}
+		var w uint32
+		switch srcS {
+		case I32:
+			w = uint32(int32(k.Int))
+		case U32:
+			w = uint32(k.Int)
+		case F32:
+			w = math.Float32bits(float32(k.Float))
+		case F16:
+			w = uint32(f16Bits(k.Float))
+		default:
+			return nil, ""
+		}
+		for b := 0; b < size(srcS); b++ {
+			buf = append(buf, byte(w>>(8*b)))
+		}
+	}
+	m := 1
+	if v, ok := to.(*VecType); ok {
+		m = v.N
+	}
+	if len(buf) != m*size(dstS) {
+		return nil, ""
+	}
+	elems := make([]*Const, m)
+	for i := 0; i < m; i++ {
+		var w uint32
+		for b := 0; b < size(dstS); b++ {
+			w |= uint32(buf[i*size(dstS)+b]) << (8 * b)
+		}
+		switch dstS {
+		case I32:
+			elems[i] = intConst(I32, int64(int32(w)))
+		case U32:
+			elems[i] = intConst(U32, int64(w))
+		case F32:
+			f := math.Float32frombits(w)
+			if math.IsInf(float64(f), 0) || math.IsNaN(float64(f)) {
+				return nil, "bitcast result is not a finite f32"
+			}
+			elems[i] = floatConst(F32, float64(f))
+		case F16:
+			f, ok := f16FromBits(uint16(w))
+			if !ok {
+				return nil, "bitcast result is not a finite f16"
+			}
+			elems[i] = floatConst(F16, f)
+		default:
+			return nil, ""
+		}
+	}
+	if m == 1 {
+		return elems[0], ""
+	}
+	return &Const{Type: to, Elems: elems}, ""
+}
+
+// f16Bits returns the binary16 encoding of x, which must be representable.
+func f16Bits(x float64) uint16 {
+	sign := uint16(0)
+	if math.Signbit(x) {
+		sign = 0x8000
+	}
+	ax := math.Abs(x)
+	if ax == 0 {
+		return sign
+	}
+	e := math.Ilogb(ax)
+	if e < -14 {
+		return sign | uint16(math.RoundToEven(ax/math.Ldexp(1, -24)))
+	}
+	frac := uint16(math.RoundToEven((ax/math.Ldexp(1, e) - 1) * 1024))
+	return sign | uint16(e+15)<<10 | frac
+}
+
+// f16FromBits decodes a binary16 value; ok is false for infinity and NaN.
+func f16FromBits(h uint16) (float64, bool) {
+	e := int(h>>10) & 31
+	frac := float64(h & 1023)
+	if e == 31 {
+		return 0, false
+	}
+	var v float64
+	if e == 0 {
+		v = frac * math.Ldexp(1, -24)
+	} else {
+		v = (1 + frac/1024) * math.Ldexp(1, e-15)
+	}
+	if h&0x8000 != 0 {
+		v = -v
+	}
+	return v, true
 }
 
 func concreteFor(src, to Type) Type {
