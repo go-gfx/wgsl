@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\nstruct U { slot: u32, value: u32 };\n@group(0) @binding(0) var<uniform> u: U;\n@group(0) @binding(1) var<storage, read_write> o: array<u32>;\n@compute @workgroup_size(1) fn main() { o[u.slot] = u.value; }")

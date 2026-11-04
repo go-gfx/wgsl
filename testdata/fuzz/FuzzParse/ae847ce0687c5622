@@ -1,0 +1,2 @@
+go test fuzz v1
+string("@diagnostic(info, derivative_uniformity) @diagnostic(error, derivative_uniformity) fn foo() { }")

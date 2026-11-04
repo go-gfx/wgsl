@@ -1,0 +1,2 @@
+go test fuzz v1
+string("fn F() {\n  let texture_storage_2d_array = 1;\n}")

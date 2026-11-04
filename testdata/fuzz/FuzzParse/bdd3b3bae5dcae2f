@@ -1,0 +1,2 @@
+go test fuzz v1
+string("override module : i32 = 0;")

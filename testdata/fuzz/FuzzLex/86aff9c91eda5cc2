@@ -1,0 +1,2 @@
+go test fuzz v1
+string("enable f16; diagnostic(off, x.y);")

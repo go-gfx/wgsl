@@ -1,0 +1,2 @@
+go test fuzz v1
+string("fn foo() { @diagnostic(error, derivative_uniformity) for (var i = 0; i < 10; i++) @diagnostic(warning, derivative_uniformity) { } }")

@@ -1,0 +1,49 @@
+{
+  "repo": "go-quake1/engine",
+  "commit": "7f94bf79d64a2fa7332a844bdf5261585fc90b02",
+  "licence": "see LICENSE of go-quake1/engine",
+  "entries": [
+    {
+      "source": "render/gpuworld/alias.go",
+      "line": 171,
+      "file": "render__gpuworld__alias.go.171.wgsl",
+      "sha256": "6656d6a4e608e6cefcba768c67f235c4068d8ba93e0398067c5edb3ee6737813",
+      "kind": "assembled"
+    },
+    {
+      "source": "render/gpuworld/alias.go",
+      "line": 194,
+      "file": "render__gpuworld__alias.go.194.wgsl",
+      "sha256": "c11402842fd11a1d549a1b7936b24b2e8882a4737b298af542ebf42d4036995a",
+      "kind": "go-string"
+    },
+    {
+      "source": "render/gpuworld/gpuworld.go",
+      "line": 259,
+      "file": "render__gpuworld__gpuworld.go.259.wgsl",
+      "sha256": "e108d225d1dc67b8d22799015e0741ccf6395cece2b79a325b5647540b833a0a",
+      "kind": "go-string"
+    },
+    {
+      "source": "render/gpuworld/special.go",
+      "line": 125,
+      "file": "render__gpuworld__special.go.125.wgsl",
+      "sha256": "84ab34f31cb7f5d48f249f4f8cb8d6eabfb5133035ee42e6b03c01821d12a1e2",
+      "kind": "assembled"
+    },
+    {
+      "source": "render/gpuworld/special.go",
+      "line": 168,
+      "file": "render__gpuworld__special.go.168.wgsl",
+      "sha256": "e606932466907a1fa95e73b361718573bb828b757f6d231768059f1c13dc40a9",
+      "kind": "go-string"
+    },
+    {
+      "source": "render/webgpupresent/webgpupresent.go",
+      "line": 22,
+      "file": "render__webgpupresent__webgpupresent.go.22.wgsl",
+      "sha256": "1b5fbe554928ef96406188738013c00011f24fd996e71a730f0c9a0bf07a8fe6",
+      "kind": "go-string"
+    }
+  ]
+}

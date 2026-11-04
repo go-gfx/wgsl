@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\n@group(0) @binding(0) var<storage, read> a: array<f32>;\n@group(0) @binding(1) var<storage, read> b: array<f32>;\n@group(0) @binding(2) var<storage, read_write> c: array<f32>;\n@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) g: vec3<u32>) {\n  let i = g.x + g.y * 4194240u;\n  if (i < arrayLength(&c)) { c[i] = a[i] + b[i]; }\n}")

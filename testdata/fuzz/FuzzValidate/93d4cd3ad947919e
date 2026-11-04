@@ -1,0 +1,2 @@
+go test fuzz v1
+string("override texture_depth_cube : i32 = 0;")

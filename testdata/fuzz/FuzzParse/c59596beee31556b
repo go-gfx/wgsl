@@ -1,0 +1,2 @@
+go test fuzz v1
+string("fn foo() { while true @diagnostic(error, derivative_uniformity) @diagnostic(error, another_diagnostic_rule) { break; } }")
