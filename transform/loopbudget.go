@@ -37,7 +37,7 @@ type Config struct {
 // Report describes what LoopBudget did.
 type Report struct {
 	Loops        int    // loop, for and while statements instrumented
-	Counters     int    // local counters declared (one per outermost loop)
+	Counters     int    // local counters declared (one per nesting depth of each outermost loop)
 	BudgetName   string // the override or uniform variable
 	FlagName     string // the atomic<u32> storage variable
 	Instrumented bool   // false when the module has no loops: output equals input
@@ -47,13 +47,21 @@ type Report struct {
 // counts its iterations and leaves the loop, setting the truncation flag,
 // when the count exceeds the budget.
 //
-// Semantics. Each outermost loop gets a function-local counter, declared just
-// before it; the counter is incremented at the top of every iteration of that
-// loop and of every loop nested in it, so the iterations of one loop nest are
-// bounded by the budget in total (not per level). When `count > budget`, the
-// loop executes `atomicStore(&flag, 1u); break;` and the enclosing loops stop
-// at their next iteration, because the counter stays above the budget. A loop
-// that runs at most `budget` iterations is unchanged in behaviour.
+// Semantics. Each outermost loop gets function-local counters, one per
+// nesting depth of its nest, declared just before it; the counter of depth d
+// is incremented at the top of every iteration of every loop of depth d in the
+// nest, so the iterations of the loops of one depth are bounded by the budget
+// in total (a nest runs at most depth x budget iterations). When
+// `count > budget`, the loop executes `atomicStore(&flag, 1u); break;` and the
+// loops of its depth stop at their next iteration, because the counter stays
+// above the budget. A loop that runs at most `budget` iterations is unchanged
+// in behaviour.
+//
+// Why one counter per depth and not one per nest: an inner loop whose trip
+// count differs between invocations (a strided loop over the thread index)
+// would make a shared counter non-uniform, and the outer loop's check with it,
+// and the browser then rejects a workgroupBarrier() in the outer loop. With
+// one counter per depth the outer counter only counts outer iterations.
 //
 // The counters are locals, not module-scope `var<private>`, on purpose: the
 // uniformity analysis treats a read of a private variable as non-uniform, so
@@ -94,7 +102,7 @@ func LoopBudget(m *wgsl.Module, cfg Config) (*wgsl.Module, *Report, error) {
 	t := &rewriter{rep: r, pick: pick}
 	for _, d := range c.Decls {
 		if f, ok := d.(*wgsl.Func); ok {
-			f.Body.Stmts = t.list(f.Body.Stmts, "")
+			f.Body.Stmts = t.list(f.Body.Stmts, nil, 0)
 		}
 	}
 	if r.Loops == 0 {
@@ -146,20 +154,66 @@ func isLoop(s wgsl.Stmt) bool {
 	return false
 }
 
-// list rewrites a statement list. counter is the counter of the enclosing
-// loop nest, "" outside any loop.
-func (t *rewriter) list(ss []wgsl.Stmt, counter string) []wgsl.Stmt {
+// nest is the counters of one outermost loop nest, one per nesting depth.
+type nest struct{ names []string }
+
+// depthOf is the deepest loop nesting in a statement list (0: no loop).
+func depthOf(ss []wgsl.Stmt) int {
+	d := 0
+	for _, s := range ss {
+		d = max(d, depthOfStmt(s))
+	}
+	return d
+}
+
+func depthOfStmt(s wgsl.Stmt) int {
+	switch s := s.(type) {
+	case *wgsl.Block:
+		return depthOf(s.Stmts)
+	case *wgsl.If:
+		d := depthOfStmt(s.Then)
+		if s.Else != nil {
+			d = max(d, depthOfStmt(s.Else))
+		}
+		return d
+	case *wgsl.Switch:
+		d := 0
+		for _, c := range s.Cases {
+			d = max(d, depthOfStmt(c.Body))
+		}
+		return d
+	case *wgsl.Loop:
+		d := depthOf(s.Body)
+		if s.Cont != nil {
+			d = max(d, depthOf(s.Cont.Stmts))
+		}
+		return 1 + d
+	case *wgsl.For:
+		return 1 + depthOfStmt(s.Body)
+	case *wgsl.While:
+		return 1 + depthOfStmt(s.Body)
+	}
+	return 0
+}
+
+// list rewrites a statement list. n is the counters of the enclosing loop
+// nest (nil outside any loop) and depth the loop depth of the list in it.
+func (t *rewriter) list(ss []wgsl.Stmt, n *nest, depth int) []wgsl.Stmt {
 	var out []wgsl.Stmt
 	for _, s := range ss {
-		if counter == "" && isLoop(s) {
-			name := t.pick("loop_count")
-			t.rep.Counters++
-			out = append(out, &wgsl.DeclStmt{Decl: &wgsl.Var{Name: name, Type: ident("u32"),
-				Init: &wgsl.IntLit{Text: "0u"}}})
-			out = append(out, t.stmt(s, name))
+		if n == nil && isLoop(s) {
+			nn := &nest{}
+			for i := depthOfStmt(s); i > 0; i-- {
+				name := t.pick("loop_count")
+				t.rep.Counters++
+				nn.names = append(nn.names, name)
+				out = append(out, &wgsl.DeclStmt{Decl: &wgsl.Var{Name: name, Type: ident("u32"),
+					Init: &wgsl.IntLit{Text: "0u"}}})
+			}
+			out = append(out, t.stmt(s, nn, 0))
 			continue
 		}
-		out = append(out, t.stmt(s, counter))
+		out = append(out, t.stmt(s, n, depth))
 	}
 	return out
 }
@@ -180,43 +234,43 @@ func (t *rewriter) check(counter string) []wgsl.Stmt {
 	}
 }
 
-func (t *rewriter) block(b *wgsl.Block, counter string) {
+func (t *rewriter) block(b *wgsl.Block, n *nest, depth int) {
 	if b != nil {
-		b.Stmts = t.list(b.Stmts, counter)
+		b.Stmts = t.list(b.Stmts, n, depth)
 	}
 }
 
-func (t *rewriter) stmt(s wgsl.Stmt, counter string) wgsl.Stmt {
+func (t *rewriter) stmt(s wgsl.Stmt, n *nest, depth int) wgsl.Stmt {
 	switch s := s.(type) {
 	case *wgsl.Block:
-		t.block(s, counter)
+		t.block(s, n, depth)
 	case *wgsl.If:
-		t.block(s.Then, counter)
+		t.block(s.Then, n, depth)
 		switch e := s.Else.(type) {
 		case *wgsl.If:
-			t.stmt(e, counter)
+			t.stmt(e, n, depth)
 		case *wgsl.Block:
-			t.block(e, counter)
+			t.block(e, n, depth)
 		}
 	case *wgsl.Switch:
 		for _, c := range s.Cases {
-			t.block(c.Body, counter)
+			t.block(c.Body, n, depth)
 		}
 	case *wgsl.Loop:
 		t.rep.Loops++
-		body := t.list(s.Body, counter)
-		s.Body = append(t.check(counter), body...)
+		body := t.list(s.Body, n, depth+1)
+		s.Body = append(t.check(n.names[depth]), body...)
 		if s.Cont != nil {
-			s.Cont.Stmts = t.list(s.Cont.Stmts, counter)
+			s.Cont.Stmts = t.list(s.Cont.Stmts, n, depth+1)
 		}
 	case *wgsl.For:
 		t.rep.Loops++
-		t.block(s.Body, counter)
-		s.Body.Stmts = append(t.check(counter), s.Body.Stmts...)
+		t.block(s.Body, n, depth+1)
+		s.Body.Stmts = append(t.check(n.names[depth]), s.Body.Stmts...)
 	case *wgsl.While:
 		t.rep.Loops++
-		t.block(s.Body, counter)
-		s.Body.Stmts = append(t.check(counter), s.Body.Stmts...)
+		t.block(s.Body, n, depth+1)
+		s.Body.Stmts = append(t.check(n.names[depth]), s.Body.Stmts...)
 	}
 	return s
 }

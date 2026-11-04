@@ -43,9 +43,10 @@ func TestLoopBudgetStructure(t *testing.T) {
 	if wgsl.Print(in) != before {
 		t.Fatal("input module was modified")
 	}
-	// loop, for, while, inner for, while (in switch) = 5 loops;
-	// outermost nests: loop, for, while-in-switch = 3 counters.
-	if rep.Loops != 5 || rep.Counters != 3 || !rep.Instrumented {
+	// loop, for, while, inner for, while (in switch) = 5 loops; three
+	// outermost nests of depth 1 (loop), 3 (for, while, for) and 1 (the while in
+	// the switch): one counter per depth = 5 counters.
+	if rep.Loops != 5 || rep.Counters != 5 || !rep.Instrumented {
 		t.Fatalf("%+v", rep)
 	}
 	text := wgsl.Print(out)
@@ -150,4 +151,36 @@ func TestRealShadersStillValidate(t *testing.T) {
 		t.Fatalf("only %d shaders", n)
 	}
 	t.Logf("%d valid real shaders, %d with loops: transformed output validates", n, withLoops)
+}
+
+// An inner loop whose trip count differs between invocations must not make the
+// outer loop's check non-uniform (the browser would then reject the
+// workgroupBarrier in the outer loop): each depth has its own counter, and the
+// outer check reads only the outer one.
+func TestLoopBudgetCounterPerDepth(t *testing.T) {
+	src := `
+var<workgroup> tile: array<f32, 64>;
+@compute @workgroup_size(64)
+fn main(@builtin(local_invocation_index) li: u32) {
+    for (var t = 0u; t < 4u; t++) {
+        var i = li;
+        loop { if (i >= 100u) { break; } tile[i % 64u] = 1.0; i += 64u; }
+        workgroupBarrier();
+    }
+}
+`
+	out, rep, err := LoopBudget(parse(t, src), Config{Budget: BudgetSource{Group: 1, Binding: 0}, FlagGroup: 1, FlagBinding: 1})
+	if err != nil || rep.Counters != 2 {
+		t.Fatalf("%v %+v", err, rep)
+	}
+	text := wgsl.Print(out)
+	// the outer loop counts with wgsl_loop_count, the inner with the next name
+	outer := strings.Index(text, "wgsl_loop_count += 1u;")
+	inner := strings.Index(text, "wgsl_loop_count_0 += 1u;")
+	if outer < 0 || inner < 0 || outer > inner {
+		t.Errorf("counters per depth missing in\n%s", text)
+	}
+	if strings.Count(text, "wgsl_loop_count_0 +=") != 1 || strings.Count(text, "wgsl_loop_count +=") != 1 {
+		t.Errorf("each depth counts once per loop of the depth\n%s", text)
+	}
 }
