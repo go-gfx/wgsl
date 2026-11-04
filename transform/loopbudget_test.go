@@ -43,9 +43,10 @@ func TestLoopBudgetStructure(t *testing.T) {
 	if wgsl.Print(in) != before {
 		t.Fatal("input module was modified")
 	}
-	// loop, for, while, inner for, while (in switch) = 5 loops;
-	// outermost nests: loop, for, while-in-switch = 3 counters.
-	if rep.Loops != 5 || rep.Counters != 3 || !rep.Instrumented {
+	// loop, for, while, inner for, while (in switch) = 5 loops; three
+	// outermost nests of depth 1 (loop), 3 (for, while, for) and 1 (the while in
+	// the switch): one counter per depth = 5 counters.
+	if rep.Loops != 5 || rep.Counters != 5 || !rep.Instrumented {
 		t.Fatalf("%+v", rep)
 	}
 	text := wgsl.Print(out)
@@ -150,4 +151,86 @@ func TestRealShadersStillValidate(t *testing.T) {
 		t.Fatalf("only %d shaders", n)
 	}
 	t.Logf("%d valid real shaders, %d with loops: transformed output validates", n, withLoops)
+}
+
+// An inner loop whose trip count differs between invocations must not make the
+// outer loop's check non-uniform (the browser would then reject the
+// workgroupBarrier in the outer loop): each depth has its own counter, and the
+// outer check reads only the outer one.
+func TestLoopBudgetCounterPerDepth(t *testing.T) {
+	src := `
+var<workgroup> tile: array<f32, 64>;
+@compute @workgroup_size(64)
+fn main(@builtin(local_invocation_index) li: u32) {
+    for (var t = 0u; t < 4u; t++) {
+        var i = li;
+        loop { if (i >= 100u) { break; } tile[i % 64u] = 1.0; i += 64u; }
+        workgroupBarrier();
+    }
+}
+`
+	out, rep, err := LoopBudget(parse(t, src), Config{Budget: BudgetSource{Group: 1, Binding: 0}, FlagGroup: 1, FlagBinding: 1})
+	if err != nil || rep.Counters != 2 {
+		t.Fatalf("%v %+v", err, rep)
+	}
+	text := wgsl.Print(out)
+	// the outer loop counts with wgsl_loop_count, the inner with the next name
+	outer := strings.Index(text, "wgsl_loop_count += 1u;")
+	inner := strings.Index(text, "wgsl_loop_count_0 += 1u;")
+	if outer < 0 || inner < 0 || outer > inner {
+		t.Errorf("counters per depth missing in\n%s", text)
+	}
+	if strings.Count(text, "wgsl_loop_count_0 +=") != 1 || strings.Count(text, "wgsl_loop_count +=") != 1 {
+		t.Errorf("each depth counts once per loop of the depth\n%s", text)
+	}
+}
+
+// A leaf loop with a small constant trip count is not checked per iteration:
+// the enclosing counter is advanced by the trip count once, so the bound stays
+// exact; anything else is checked as before.
+func TestLoopBudgetSmallLeaf(t *testing.T) {
+	cfg := Config{Budget: BudgetSource{Group: 1, Binding: 0}, FlagGroup: 1, FlagBinding: 1, SmallLoop: 16}
+	src := `
+@group(0) @binding(0) var<storage, read_write> out: array<u32>;
+@compute @workgroup_size(1)
+fn main() {
+    var n = 0u;
+    for (var a = 0u; a < 4u; a++) { n++; }
+    for (var i = 0u; i < 100u; i++) {
+        for (var j = 0u; j < 4u; j++) { n++; }
+        for (var k = 1u; k <= 7u; k += 2u) { n++; }
+        for (var m = 0u; m < 64u; m++) { n++; }
+        for (var p = 0u; p < 4u; p++) { p += 1u; }
+        for (var q = 0u; q < n; q++) { n++; }
+        for (var r = 0u; r < 4u; r++) { for (var s = 0u; s < 2u; s++) { n++; } }
+        for (var w = 0u; w < 4u; w = w + 1u) { out[w] = 1u; }
+    }
+}
+`
+	out, rep, err := LoopBudget(parse(t, src), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// skipped: a (outside any loop), j, k, w, and s (a leaf inside r); checked:
+	// i, m (trip 64), p (assigns its variable), q (not constant) and r (not a leaf)
+	text := wgsl.Print(out)
+	if rep.Skipped != 5 || rep.Loops != 5 {
+		t.Errorf("%+v\n%s", rep, text)
+	}
+	for _, want := range []string{"wgsl_loop_count += 4u;", "for (var j = 0u; j < 4u; j++)", "for (var a = 0u; a < 4u; a++)"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "var wgsl_loop_count: u32 = 0u;\n    for (var a") {
+		t.Errorf("a leaf loop outside every loop got a counter\n%s", text)
+	}
+	if err := wgsl.Validate(text); err != nil {
+		t.Fatalf("%v\n%s", err, text)
+	}
+	// off by default
+	_, rep, _ = LoopBudget(parse(t, src), Config{Budget: BudgetSource{Group: 1, Binding: 0}, FlagGroup: 1, FlagBinding: 1})
+	if rep.Skipped != 0 {
+		t.Errorf("SmallLoop 0 skipped %d", rep.Skipped)
+	}
 }
