@@ -1,6 +1,7 @@
 package wgsl
 
 import (
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -387,6 +388,11 @@ func Lex(src *Source, lim Limits) ([]Token, error) {
 			}
 			i += n
 		}
+	}
+	// Spec "Parsing": the program text must not include U+0000, even inside
+	// a comment (CTS parse,blankspace:null_characters).
+	if i := strings.IndexByte(src.Text, 0); i >= 0 {
+		return nil, src.errAt(i, "nul", "program text must not contain U+0000")
 	}
 	sc := &scanner{src: src, s: src.Text}
 	starts, ends, err := sc.discoverTemplates()

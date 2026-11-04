@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\nvar<workgroup> a: atomic<i32>;\n\n\n\nfn sibling() {\n  \n}\n\n@compute @workgroup_size(1)\nfn main() {\n  let atomicAnd = 4;\n  _ = atomicAnd(&a, 1);\n}\n    ")

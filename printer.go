@@ -483,6 +483,10 @@ func (p *printer) expr(e Expr) {
 		p.w(")")
 	case *Member:
 		p.postfixBase(e.X)
+		switch e.X.(type) {
+		case *IntLit, *FloatLit:
+			p.w(" ") // "0.x" would lex as the float "0." followed by x
+		}
 		p.w("." + e.Name)
 	case *Index:
 		p.postfixBase(e.X)

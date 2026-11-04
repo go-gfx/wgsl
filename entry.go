@@ -294,7 +294,7 @@ func (c *checker) entryIO(ep *EntryPoint) {
 				mio := IOVar{Name: m.Name, Type: m.Type, Builtin: m.BuiltinName, Location: m.Location,
 					BlendSrc: m.BlendSrc, Interpolate: m.Interpolate, Invariant: m.Invariant, Member: m.Name}
 				addIO(mio, n, input, n)
-				if input {
+				if input && len(ep.Inputs) > 0 {
 					ep.Inputs[len(ep.Inputs)-1].Param = idx
 				}
 			}

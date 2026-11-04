@@ -109,6 +109,15 @@ func TestDeepNestingRefused(t *testing.T) {
 	}
 }
 
+func TestNulRefused(t *testing.T) {
+	for _, src := range []string{"// a \x00 b\nfn f() {}", "fn f() {}\x00", "fn f\x00() {}"} {
+		e, ok := func() (*Error, bool) { _, err := Parse(src); e, ok := err.(*Error); return e, ok }()
+		if !ok || e.Rule != "nul" {
+			t.Errorf("NUL accepted in %q", src)
+		}
+	}
+}
+
 func TestLimits(t *testing.T) {
 	if _, err := Parse(strings.Repeat(";", 100), Options{Limits: Limits{MaxSource: 50}}); err == nil {
 		t.Error("source limit not enforced")

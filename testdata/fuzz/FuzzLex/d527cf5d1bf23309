@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\n@group(0) @binding(0) var t_2d: texture_2d<f32>;\n@group(0) @binding(1) var t_2d_depth: texture_depth_2d;\n@group(0) @binding(2) var t_2d_array: texture_2d_array<f32>;\n@group(0) @binding(3) var t_2d_ms: texture_multisampled_2d<f32>;\n\n@group(1) @binding(0) var s: sampler;\n@group(1) @binding(1) var sc: sampler_comparison;\n\n\n\nfn sibling() {\n  let textureNumSamples = 4;\n}\n\n@fragment\nfn main() -> @location(0) vec4f {\n  \n  _ = textureNumSamples(t_2d_ms);\n  return vec4f(1);\n}\n    ")

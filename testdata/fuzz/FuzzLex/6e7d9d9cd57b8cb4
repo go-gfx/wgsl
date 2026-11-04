@@ -1,0 +1,2 @@
+go test fuzz v1
+string("fn F() {\n  let 검정 = 1;\n}")

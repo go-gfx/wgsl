@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\nstruct Meta { n: u32 }\n@group(0) @binding(0) var<storage, read_write> g: array<f32>;\n@group(0) @binding(1) var<storage, read> u: array<f32>;\n@group(0) @binding(2) var<storage, read> prm: Meta;\n\n@compute @workgroup_size(64)\nfn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n  let i = gid.x;\n  if (i < prm.n) {\n    let v = g[i];\n    g[i] = v / (1.0 + exp(-v)) * u[i];\n  }\n}\n")

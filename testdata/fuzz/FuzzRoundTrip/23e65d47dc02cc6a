@@ -1,0 +1,2 @@
+go test fuzz v1
+string("fn F() {\n  const non_coherent = 1;\n}")

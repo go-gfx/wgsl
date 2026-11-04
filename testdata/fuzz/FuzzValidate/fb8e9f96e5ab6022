@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\n\n\n@group(0) @binding(0) var<storage, read> a: i32;\n\n@compute @workgroup_size(1)\nfn main() {\n  let read = 4;\n}\n    ")

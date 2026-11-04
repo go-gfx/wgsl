@@ -342,6 +342,10 @@ func (c *checker) arrayCtor(e *Call, t *ArrayType, args []*val) *val {
 		}
 		elem = t.Elem
 	} else {
+		if len(args) == 0 {
+			c.err(e, "arg-count", "array<> constructor with inferred type needs at least one argument")
+			return invalidVal()
+		}
 		var cands []sig
 		for _, cand := range targets(args[0].t) {
 			if !constructible(cand) {

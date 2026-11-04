@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\nfn a_func() -> i32 {\n    return 4;\n}\n\nconst a_const = -2 + 10;\noverride a_override: i32 = 2;\n\n@id(2) override my_id: i32 = 4;\n\nstruct B {\n    a: i32,\n}\n\n@binding(0) @group(0)\nvar<uniform> uniform_buffer_1: B;\n\n@binding(1) @group(1)\nvar<uniform> uniform_buffer_2: B;\n\n@fragment\nfn main() -> @location(a_const) vec4<f32> {\n  return vec4<f32>(.4, .2, .3, .1);\n}\n\n@compute\n@workgroup_size(1)\nfn compute_main() {}\n")

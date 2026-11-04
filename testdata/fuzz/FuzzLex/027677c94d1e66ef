@@ -1,0 +1,2 @@
+go test fuzz v1
+string("fn foo() { switch 0 { default  { } } }")

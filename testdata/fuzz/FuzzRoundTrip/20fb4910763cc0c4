@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\n      enable f16;\n\n      @compute @workgroup_size(1)\n      fn main() {\n        var test: f16 = 2.4e-2h;\n      }")

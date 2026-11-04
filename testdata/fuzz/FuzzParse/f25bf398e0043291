@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\n@group(0) @binding(0) var<storage, read_write> state: array<u32>;\n@compute @workgroup_size(1)\nfn main() {\n  state[0] = state[0] + 1u;\n  state[1] = state[1] + 1u;\n}\n")

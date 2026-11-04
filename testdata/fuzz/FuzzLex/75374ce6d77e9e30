@@ -1,0 +1,2 @@
+go test fuzz v1
+string("fn foo() { switch 0 { case 0 @diagnostic(warning, derivative_uniformity) { } default @diagnostic(info, derivative_uniformity) { } } }")

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("fn F() {\n  let concept = 1;\n}")

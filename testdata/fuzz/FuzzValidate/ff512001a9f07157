@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\n@group(0) @binding(0) var<storage, read_write> out: array<u32>;\n@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3<u32>) {\n  if (id.x < arrayLength(&out)) { out[id.x] = id.x * 2654435761u + 7u; }\n}")

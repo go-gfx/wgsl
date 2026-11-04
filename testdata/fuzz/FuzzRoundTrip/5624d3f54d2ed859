@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\nstruct Data {\n  rt_arr: array<i32>,\n}\n@group(0) @binding(0) var<storage> placeholder: Data;\n\n\n\nfn sibling() {\n  let mat2x2 = 4;\n}\n\n@fragment\nfn main() -> @location(0) vec4f {\n  \n  _ = mat2x2(1, 2, 3, 4);\n  return vec4f(1);\n}\n    ")
