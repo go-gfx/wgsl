@@ -6,6 +6,7 @@ package transform
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/go-gfx/wgsl"
 )
@@ -32,11 +33,21 @@ type Config struct {
 	// Prefix of the names the transform introduces ("wgsl_" by default). The
 	// names are made unique against every identifier of the module.
 	Prefix string
+	// SmallLoop, if nonzero, is the largest constant trip count of a leaf loop
+	// that is not checked per iteration: a `for (var i = a; i < b; i++)` whose
+	// bounds and step are literals, whose body has no loop and does not assign i,
+	// runs at most SmallLoop iterations whatever the invocation does, so the
+	// enclosing loop's counter is advanced by its trip count in one addition
+	// before it (the bound stays exact) and the loop itself is left as written.
+	// A leaf loop outside every loop is left as written. 0: every loop is
+	// checked.
+	SmallLoop uint32
 }
 
 // Report describes what LoopBudget did.
 type Report struct {
 	Loops        int    // loop, for and while statements instrumented
+	Skipped      int    // leaf loops with a small constant trip count, left as written (Config.SmallLoop)
 	Counters     int    // local counters declared (one per nesting depth of each outermost loop)
 	BudgetName   string // the override or uniform variable
 	FlagName     string // the atomic<u32> storage variable
@@ -99,7 +110,7 @@ func LoopBudget(m *wgsl.Module, cfg Config) (*wgsl.Module, *Report, error) {
 		return name
 	}
 	r := &Report{BudgetName: pick("loop_budget"), FlagName: pick("truncated")}
-	t := &rewriter{rep: r, pick: pick}
+	t := &rewriter{rep: r, pick: pick, small: cfg.SmallLoop}
 	for _, d := range c.Decls {
 		if f, ok := d.(*wgsl.Func); ok {
 			f.Body.Stmts = t.list(f.Body.Stmts, nil, 0)
@@ -138,8 +149,9 @@ func bindingAttrs(group, binding int) []*wgsl.Attr {
 }
 
 type rewriter struct {
-	rep  *Report
-	pick func(string) string
+	rep   *Report
+	pick  func(string) string
+	small uint32 // Config.SmallLoop
 }
 
 // names are fixed before rewriting starts (see LoopBudget); the checks refer
@@ -158,40 +170,43 @@ func isLoop(s wgsl.Stmt) bool {
 type nest struct{ names []string }
 
 // depthOf is the deepest loop nesting in a statement list (0: no loop).
-func depthOf(ss []wgsl.Stmt) int {
+func (t *rewriter) depthOf(ss []wgsl.Stmt) int {
 	d := 0
 	for _, s := range ss {
-		d = max(d, depthOfStmt(s))
+		d = max(d, t.depthOfStmt(s))
 	}
 	return d
 }
 
-func depthOfStmt(s wgsl.Stmt) int {
+func (t *rewriter) depthOfStmt(s wgsl.Stmt) int {
 	switch s := s.(type) {
 	case *wgsl.Block:
-		return depthOf(s.Stmts)
+		return t.depthOf(s.Stmts)
 	case *wgsl.If:
-		d := depthOfStmt(s.Then)
+		d := t.depthOfStmt(s.Then)
 		if s.Else != nil {
-			d = max(d, depthOfStmt(s.Else))
+			d = max(d, t.depthOfStmt(s.Else))
 		}
 		return d
 	case *wgsl.Switch:
 		d := 0
 		for _, c := range s.Cases {
-			d = max(d, depthOfStmt(c.Body))
+			d = max(d, t.depthOfStmt(c.Body))
 		}
 		return d
 	case *wgsl.Loop:
-		d := depthOf(s.Body)
+		d := t.depthOf(s.Body)
 		if s.Cont != nil {
-			d = max(d, depthOf(s.Cont.Stmts))
+			d = max(d, t.depthOf(s.Cont.Stmts))
 		}
 		return 1 + d
 	case *wgsl.For:
-		return 1 + depthOfStmt(s.Body)
+		if _, ok := t.smallLeaf(s); ok {
+			return 0
+		}
+		return 1 + t.depthOfStmt(s.Body)
 	case *wgsl.While:
-		return 1 + depthOfStmt(s.Body)
+		return 1 + t.depthOfStmt(s.Body)
 	}
 	return 0
 }
@@ -201,9 +216,19 @@ func depthOfStmt(s wgsl.Stmt) int {
 func (t *rewriter) list(ss []wgsl.Stmt, n *nest, depth int) []wgsl.Stmt {
 	var out []wgsl.Stmt
 	for _, s := range ss {
+		if f, ok := s.(*wgsl.For); ok {
+			if trip, small := t.smallLeaf(f); small {
+				t.rep.Skipped++
+				if n != nil && depth > 0 { // advance the enclosing loop's counter, once
+					out = append(out, &wgsl.Assign{LHS: ident(n.names[depth-1]), Op: "+=", RHS: &wgsl.IntLit{Text: strconv.FormatInt(trip, 10) + "u"}})
+				}
+				out = append(out, s)
+				continue
+			}
+		}
 		if n == nil && isLoop(s) {
 			nn := &nest{}
-			for i := depthOfStmt(s); i > 0; i-- {
+			for i := t.depthOfStmt(s); i > 0; i-- {
 				name := t.pick("loop_count")
 				t.rep.Counters++
 				nn.names = append(nn.names, name)
@@ -444,4 +469,184 @@ func identSet(m *wgsl.Module) map[string]bool {
 		decl(d)
 	}
 	return set
+}
+
+// smallLeaf reports whether f is a leaf loop with a constant trip count of at
+// most the configured SmallLoop, and that count: init a literal, condition
+// `i < b` or `i <= b` with a literal b, step `i++`, `i += c` or `i = i + c` with a
+// literal c > 0, no loop in the body and no assignment to i or &i in it.
+func (t *rewriter) smallLeaf(f *wgsl.For) (int64, bool) {
+	if t.small == 0 || f.Init == nil || f.Cond == nil || f.Update == nil || f.Body == nil {
+		return 0, false
+	}
+	ds, ok := f.Init.(*wgsl.DeclStmt)
+	if !ok {
+		return 0, false
+	}
+	v, ok := ds.Decl.(*wgsl.Var)
+	if !ok || v.Init == nil {
+		return 0, false
+	}
+	lo, ok := intLit(v.Init)
+	if !ok || lo < 0 {
+		return 0, false
+	}
+	cond, ok := unparen(f.Cond).(*wgsl.Binary)
+	if !ok || (cond.Op != "<" && cond.Op != "<=") || !isIdent(cond.X, v.Name) {
+		return 0, false
+	}
+	hi, ok := intLit(cond.Y)
+	if !ok || hi < 0 || hi > 1<<30 {
+		return 0, false
+	}
+	if cond.Op == "<=" {
+		hi++
+	}
+	step := int64(0)
+	switch u := f.Update.(type) {
+	case *wgsl.IncDec:
+		if isIdent(u.X, v.Name) && u.Op == "++" {
+			step = 1
+		}
+	case *wgsl.Assign:
+		if !isIdent(u.LHS, v.Name) {
+			break
+		}
+		if u.Op == "+=" {
+			step, _ = intLit(u.RHS)
+		} else if b, ok := unparen(u.RHS).(*wgsl.Binary); ok && u.Op == "=" && b.Op == "+" && isIdent(b.X, v.Name) {
+			step, _ = intLit(b.Y)
+		}
+	}
+	if step < 1 {
+		return 0, false
+	}
+	trip := (hi - lo + step - 1) / step
+	if hi <= lo {
+		trip = 0
+	}
+	if trip > int64(t.small) || bodyBreaksLeaf(f.Body.Stmts, v.Name) {
+		return 0, false
+	}
+	return trip, true
+}
+
+func unparen(e wgsl.Expr) wgsl.Expr {
+	for {
+		p, ok := e.(*wgsl.Paren)
+		if !ok {
+			return e
+		}
+		e = p.X
+	}
+}
+
+func isIdent(e wgsl.Expr, name string) bool {
+	id, ok := unparen(e).(*wgsl.Ident)
+	return ok && id.Name == name && len(id.Targs) == 0
+}
+
+// intLit is the value of an integer literal expression (i or u suffix allowed).
+func intLit(e wgsl.Expr) (int64, bool) {
+	l, ok := unparen(e).(*wgsl.IntLit)
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(strings.TrimRight(l.Text, "ui"), 0, 64)
+	return n, err == nil
+}
+
+// bodyBreaksLeaf reports whether a loop body (that must be a leaf) contains a
+// loop, or anything that could change the loop variable: an assignment to it,
+// ++ or --, or its address taken.
+func bodyBreaksLeaf(ss []wgsl.Stmt, name string) bool {
+	bad := false
+	var expr func(e wgsl.Expr)
+	expr = func(e wgsl.Expr) {
+		switch e := e.(type) {
+		case *wgsl.Unary:
+			if e.Op == "&" && isIdent(e.X, name) {
+				bad = true
+			}
+			expr(e.X)
+		case *wgsl.Call:
+			for _, a := range e.Args {
+				expr(a)
+			}
+		case *wgsl.Binary:
+			expr(e.X)
+			expr(e.Y)
+		case *wgsl.Index:
+			expr(e.X)
+			expr(e.I)
+		case *wgsl.Member:
+			expr(e.X)
+		case *wgsl.Paren:
+			expr(e.X)
+		}
+	}
+	var stmts func(ss []wgsl.Stmt)
+	stmt := func(s wgsl.Stmt) {
+		switch s := s.(type) {
+		case *wgsl.Loop, *wgsl.For, *wgsl.While:
+			bad = true
+		case *wgsl.Block:
+			stmts(s.Stmts)
+		case *wgsl.If:
+			expr(s.Cond)
+			stmts([]wgsl.Stmt{s.Then})
+			if s.Else != nil {
+				stmts([]wgsl.Stmt{s.Else})
+			}
+		case *wgsl.Switch:
+			expr(s.X)
+			for _, c := range s.Cases {
+				stmts([]wgsl.Stmt{c.Body})
+			}
+		case *wgsl.Assign:
+			if s.LHS != nil && lvalueRoot(s.LHS) == name {
+				bad = true
+			}
+			expr(s.RHS)
+		case *wgsl.IncDec:
+			if lvalueRoot(s.X) == name {
+				bad = true
+			}
+		case *wgsl.CallStmt:
+			expr(s.Call)
+		case *wgsl.DeclStmt:
+			if v, ok := s.Decl.(*wgsl.Var); ok && v.Init != nil {
+				expr(v.Init)
+			}
+			if v, ok := s.Decl.(*wgsl.Value); ok && v.Init != nil {
+				expr(v.Init)
+			}
+		}
+	}
+	stmts = func(ss []wgsl.Stmt) {
+		for _, s := range ss {
+			stmt(s)
+		}
+	}
+	stmts(ss)
+	return bad
+}
+
+// lvalueRoot is the variable at the root of an assignment target (a, a[i],
+// a.m, (a)), "" otherwise.
+func lvalueRoot(e wgsl.Expr) string {
+	for {
+		switch x := e.(type) {
+		case *wgsl.Ident:
+			return x.Name
+		case *wgsl.Index:
+			e = x.X
+		case *wgsl.Member:
+			e = x.X
+		case *wgsl.Paren:
+			e = x.X
+		default:
+			return ""
+		}
+	}
 }
