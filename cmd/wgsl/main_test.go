@@ -68,6 +68,18 @@ func TestFmt(t *testing.T) {
 	}
 }
 
+func TestTransform(t *testing.T) {
+	p := write(t, "@compute @workgroup_size(1) fn main() { var i = 0u; while i < 3u { i++; } }")
+	out, errs, err := run(t, "transform", "--budget-override", "500", p)
+	if err != nil || !strings.Contains(out, "override wgsl_loop_budget: u32 = 500u;") || !strings.Contains(errs, "1 loops") {
+		t.Fatalf("%v %q %q", err, out, errs)
+	}
+	out, _, err = run(t, "transform", "--budget-group", "1", p)
+	if err != nil || !strings.Contains(out, "@group(1) @binding(0) var<uniform> wgsl_loop_budget: u32;") {
+		t.Fatalf("%v %q", err, out)
+	}
+}
+
 func TestMainExit(t *testing.T) {
 	code := 0
 	old := osExit
