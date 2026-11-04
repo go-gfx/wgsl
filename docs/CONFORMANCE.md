@@ -72,6 +72,27 @@ error as syntactic.
 The numbers are those of the committed baseline; they are expected to improve
 (false accepts to fall) as the checker lands.
 
+## Results with the v0.1.0 checker (validate = Parse + Check)
+
+| directory | total | skipped | pass accepted | fail rejected | false reject | false accept |
+|---|---:|---:|---:|---:|---:|---:|
+| const_assert | 2670 | 0 | 1334 | 1336 | 0 | 0 |
+| decl | 2817 | 3 | 779 | 2034 | 0 | 1 |
+| expression | 264241 | 2588 | 122140 | 131266 | 854 | 7393 |
+| extension | 532 | 43 | 201 | 278 | 4 | 6 |
+| functions | 10233 | 0 | 607 | 9624 | 0 | 2 |
+| parse | 4448 | 169 | 1654 | 2609 | 4 | 12 |
+| shader_io | 4930 | 180 | 1490 | 3253 | 4 | 3 |
+| statement | 1062 | 0 | 347 | 713 | 0 | 2 |
+| types | 1793 | 2 | 639 | 1139 | 0 | 13 |
+| uniformity | 91327 | 91327 | 0 | 0 | 0 | 0 |
+| **total** | 384053 | 94312 | 129191 | 152252 | 866 | 7432 |
+
+Of the 289,741 runnable cases, 281,443 (97.1 %) have the expected verdict.
+P1 below is fixed in v0.1.0 (parse-level fail rejected: 6,099, false accept
+153,585 before the checker). The remaining false rejects are concentrated in
+`expression` (854 of 866) and are open defects for v0.1.x.
+
 ## Parser defects found
 
 Every parse-level false accept was read by test group (all groups: the names
