@@ -213,7 +213,8 @@ type CheckOptions struct {
 
 // AllEnableExtensions lists the enable-extension names of the spec.
 var AllEnableExtensions = []string{"f16", "clip_distances", "dual_source_blending", "subgroups",
-	"primitive_index", "subgroup_size_control", "atomic_vec2u_min_max"}
+	"primitive_index", "subgroup_size_control", "atomic_vec2u_min_max",
+	"chromium_experimental_primitive_id"}
 
 // AllLanguageFeatures lists the language extension names of the spec.
 var AllLanguageFeatures = []string{"readonly_and_readwrite_storage_textures", "packed_4x8_integer_dot_product",

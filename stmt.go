@@ -412,7 +412,13 @@ func (c *checker) assign(s *Assign) {
 		c.err(s, "type-mismatch", "%s= would produce %s, which cannot be stored in %s", op, sg.ret, r.Elem)
 		return
 	}
-	c.convertTo(rhs, sg.params[1])
+	rhs = c.convertTo(rhs, sg.params[1])
+	switch op {
+	case "/", "%":
+		c.divisorCheck(s, sg, cur, rhs)
+	case "<<", ">>":
+		c.shiftCheck(s, sg, rhs)
+	}
 }
 
 // ---- local declarations ----

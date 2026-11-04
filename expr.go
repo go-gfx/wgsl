@@ -98,6 +98,21 @@ func concretize(t Type) Type {
 		}
 	case *RefType:
 		return t
+	case *StructType:
+		// the abstract frexp/modf result structures concretize to the f32
+		// versions (spec "frexp", "modf": return type tables)
+		if IsAbstract(t) && len(t.Members) > 0 {
+			fn := ""
+			switch {
+			case strings.HasPrefix(t.Name, "__frexp"):
+				fn = "frexp"
+			case strings.HasPrefix(t.Name, "__modf"):
+				fn = "modf"
+			}
+			if fn != "" {
+				return resultStruct(fn, concretize(t.Members[0].Type))
+			}
+		}
 	}
 	return t
 }
@@ -571,13 +586,33 @@ func (c *checker) binaryExpr(e *Binary) *val {
 		}
 	} else if e.Op == "/" || e.Op == "%" {
 		c.divisorCheck(e, s, x, y)
+	} else if e.Op == "<<" || e.Op == ">>" {
+		c.shiftCheck(e, s, y)
 	}
 	return r
 }
 
+// shiftCheck reports a const shift count that is not less than the bit width
+// of the shifted type even when the shifted operand is not a
+// const-expression (spec "Bit Expressions").
+func (c *checker) shiftCheck(e Node, s *sig, y *val) {
+	if y.k != kConst || y.c == nil {
+		return
+	}
+	bad := false
+	forEachScalar(y.c, func(k *Const) {
+		if k.Int >= 32 {
+			bad = true
+		}
+	})
+	if bad {
+		c.err(e, "const-shift", "shift count is not less than the bit width 32")
+	}
+}
+
 // divisorCheck reports division by a const zero when the dividend is not a
 // const-expression (spec "Arithmetic Expressions").
-func (c *checker) divisorCheck(e *Binary, s *sig, x, y *val) {
+func (c *checker) divisorCheck(e Node, s *sig, x, y *val) {
 	sc := scalarOf(s.params[0])
 	if sc == nil || !isIntegerScalar(sc) || y.k != kConst || y.c == nil {
 		return

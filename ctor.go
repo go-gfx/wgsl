@@ -395,7 +395,7 @@ var floatFns = map[string]fl1{
 	"fract":       func(x float64) float64 { return x - math.Floor(x) },
 	"inverseSqrt": func(x float64) float64 { return 1 / math.Sqrt(x) },
 	"degrees":     func(x float64) float64 { return x * 180 / math.Pi },
-	"radians":     func(x float64) float64 { return x * math.Pi / 180 },
+	"radians":     func(x float64) float64 { return x * (math.Pi / 180) },
 	"saturate":    func(x float64) float64 { return math.Min(math.Max(x, 0), 1) },
 }
 
@@ -431,7 +431,7 @@ func evalGeneric(name string) func(*sig, []*Const) (*Const, *evalError) {
 					return xs[0], nil
 				}
 				if sc.Kind == KAbstractInt && xs[0].Int == math.MinInt64 {
-					return nil, evalErrf("const-overflow", "abs overflows")
+					return xs[0], nil // spec "abs": e itself for the most negative value
 				}
 				return intConst(sc, wrapInt(sc, absInt(xs[0].Int))), nil
 			})
@@ -476,7 +476,17 @@ func evalGeneric(name string) func(*sig, []*Const) (*Const, *evalError) {
 		case "atan2":
 			return mapScalars(s.ret, args, func(xs []*Const) (*Const, *evalError) { return finite(sc, math.Atan2(xs[0].Float, xs[1].Float)) })
 		case "pow":
-			return mapScalars(s.ret, args, func(xs []*Const) (*Const, *evalError) { return finite(sc, math.Pow(xs[0].Float, xs[1].Float)) })
+			return mapScalars(s.ret, args, func(xs []*Const) (*Const, *evalError) { // spec "pow": e1 < 0, or e1 = 0 with e2 <= 0, is indeterminate and
+				// a const-expression error
+				if xs[0].Float < 0 || xs[0].Float == 0 && xs[1].Float <= 0 {
+					return nil, evalErrf("const-overflow", "pow of a negative base or 0 with a non-positive exponent")
+				}
+				return finite(sc, math.Pow(xs[0].Float, xs[1].Float))
+			})
+		case "ldexp":
+			return mapScalars(s.ret, args, func(xs []*Const) (*Const, *evalError) {
+				return finite(sc, math.Ldexp(xs[0].Float, int(xs[1].Int)))
+			})
 		case "step":
 			return mapScalars(s.ret, args, func(xs []*Const) (*Const, *evalError) {
 				if xs[1].Float < xs[0].Float {
@@ -495,7 +505,12 @@ func evalGeneric(name string) func(*sig, []*Const) (*Const, *evalError) {
 			})
 		case "mix":
 			return mapScalars(s.ret, args, func(xs []*Const) (*Const, *evalError) {
-				return finite(sc, xs[0].Float*(1-xs[2].Float)+xs[1].Float*xs[2].Float)
+				f := &fcalc{sc: sc}
+				v := f.add(f.mul(xs[0].Float, f.sub(1, xs[2].Float)), f.mul(xs[1].Float, xs[2].Float))
+				if f.err != nil {
+					return nil, f.err
+				}
+				return floatConst(sc, v), nil
 			})
 		case "quantizeToF16":
 			return mapScalars(s.ret, args, func(xs []*Const) (*Const, *evalError) {
@@ -602,7 +617,7 @@ func evalGeneric(name string) func(*sig, []*Const) (*Const, *evalError) {
 				}
 			}
 			return boolConst(r), nil
-		case "dot", "length", "distance", "normalize", "cross":
+		case "dot", "length", "distance", "normalize", "cross", "reflect", "refract", "faceForward":
 			return evalVecMath(name, s, args, sc)
 		case "transpose":
 			m := s.params[0].(*MatType)
@@ -621,6 +636,11 @@ func evalGeneric(name string) func(*sig, []*Const) (*Const, *evalError) {
 }
 
 func evalVecMath(name string, s *sig, args []*Const, sc *ScalarType) (*Const, *evalError) {
+	if isFloatScalar(sc) {
+		if k, err, ok := evalFloatVec(name, s, args, sc); ok {
+			return k, err
+		}
+	}
 	comps := func(c *Const) []*Const { return flatten(c, nil) }
 	switch name {
 	case "dot":
@@ -657,6 +677,13 @@ func evalVecMath(name string, s *sig, args []*Const, sc *ScalarType) (*Const, *e
 				d -= b[i].Float
 			}
 			sum += d * d
+		}
+		if len(a) == 1 { // scalar: length(e) = |e|, distance(e1, e2) = |e1 - e2|, no squaring
+			d := a[0].Float
+			if b != nil {
+				d -= b[0].Float
+			}
+			return finite(sc, math.Abs(d))
 		}
 		return finite(sc, math.Sqrt(sum))
 	case "normalize":

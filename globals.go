@@ -214,7 +214,7 @@ func (c *checker) ioAttrs(attrs []*Attr, builtin *string, loc, blend **int64, in
 	}
 }
 
-var builtinValues = map[string]bool{"vertex_index": true, "instance_index": true, "position": true,
+var builtinValues = map[string]bool{"primitive_id": true, "vertex_index": true, "instance_index": true, "position": true,
 	"front_facing": true, "frag_depth": true, "sample_index": true, "sample_mask": true,
 	"local_invocation_id": true, "local_invocation_index": true, "global_invocation_id": true,
 	"global_invocation_index": true, "workgroup_id": true, "workgroup_index": true, "num_workgroups": true,
