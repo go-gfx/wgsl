@@ -1037,4 +1037,4 @@ func (c *checker) overrideIdent(e Expr) *ValueObj {
 	return nil
 }
 
-var _ = math.MaxInt64
+var _ int64 = math.MaxInt64
