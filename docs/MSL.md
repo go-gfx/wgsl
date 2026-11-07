@@ -1,7 +1,8 @@
 # Emitting Metal Shading Language: design
 
 Status: design, nothing implemented. This note fixes the scope and the
-rules before code exists, with the sources they come from.
+rules before code exists, with the sources they come from. Every rule below
+is now taken from an opened specification; none is left to confirm.
 
 ## Why
 
@@ -62,18 +63,34 @@ these pages:
      `c ? b : a`, the same order as WGSL's `select(f, t, cond)`.
    - **The rule:** emitted as is, never rewritten as `?:`, because the
      component-wise vector case is defined only for `select`.
-4. **Integer overflow wraps.**
-   - **The problem:** WGSL defines `i32` arithmetic as wrapping, while MSL
-     follows C++, where signed overflow is undefined.
+4. **Signed overflow wraps.**
+   - **WGSL** (gpuweb `wgsl/index.bs`, line 2800 at the 2026-11-07 fetch):
+     "`i32` operations use two's complement arithmetic and have defined
+     overflow behavior".
+   - **MSL** (§3.1, p. 112): says nothing of `+`, `-` and `*` overflow, so the
+     C++ rule applies, under which signed overflow is undefined.
    - **The rule:** signed `+`, `-` and `*` are emitted through `uint` and cast
-     back, which wraps by definition. This must be confirmed against the
-     specification's operator chapter (§3.1) before implementation; it is not
-     yet.
-5. **Integer division and remainder by zero.**
-   - **The problem:** WGSL defines the result (§ "Arithmetic expressions" of
-     the WGSL specification), and MSL does not.
-   - **The rule:** the emitter guards the divisor, as WGSL's definition does.
-     To open: the WGSL specification's exact rule.
+     back. Unsigned arithmetic wraps by definition, and the cast back is the
+     two's complement reinterpretation.
+5. **Integer division and remainder: WGSL defines every case, MSL does
+   not.**
+   - **WGSL division** (`index.bs` 7064–7094): if `e2` is zero, the result is
+     `e1`; for signed `T`, if `e1` is the most negative value and `e2` is −1,
+     the result is `e1`; otherwise the quotient is truncated.
+   - **WGSL remainder** (7109–7119): signed, the same two cases give 0;
+     otherwise `e1 − truncate(e1 ÷ e2) × e2`, so a non-zero result has the sign
+     of `e1`.
+   - **MSL** (§3.1, pp. 112–113):
+     - division by zero, and `TYPE_MIN / −1`, give "an unspecified value";
+     - `%` with a zero divisor is undefined, and so is `%` with any negative
+       operand.
+   - **The rule for `/`:** the specification's own form, `e1 / select(e2, 1,
+     e2 == 0 || (e1 == MIN && e2 == -1))`, the divisor guard WGSL's comment
+     gives.
+   - **The rule for `%`:** never the MSL operator on signed values. With the
+     same guarded divisor `d`, it is emitted as `e1 - (e1 / d) * d`, then
+     forced to 0 in the two special cases. Unsigned `%` uses MSL's `%` with
+     `d = select(e2, 1, e2 == 0)` and gives 0 when `e2` is zero.
 
 ## How it will be proved
 
