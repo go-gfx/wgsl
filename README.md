@@ -74,5 +74,43 @@ an Apple GPU through Chrome's WebGPU (Metal): a loop of 10^8 iterations is cut
 at the budget with the flag set, a short loop is unchanged and leaves the flag
 clear (`WGSL_GPU_TEST=1 go test -run TestGPU ./transform`).
 
+## Metal Shading Language (package `msl`, v0.5.0)
+
+`msl.Functions(module, info, names...)` emits MSL for the named functions of a
+checked module and every function they call, with the structures they use:
+
+```go
+m, _ := wgsl.Parse(src)
+info, _ := wgsl.Check(m)
+out, err := msl.Functions(m, info, "coverage")
+```
+
+- **Scope:** plain functions over `bool`, `i32`, `u32`, `f32`, their vectors,
+  and structures of those. The supported statements are `let`, `var`,
+  assignment, `if` and `return`, plus the builtins listed in
+  [docs/MSL.md](docs/MSL.md). Anything else is refused as an `*msl.Error` with
+  its position, never emitted approximately: entry points, module-scope
+  variables, loops, arrays, textures, `f32`-to-integer conversions.
+- **WGSL's semantics, not Metal's defaults:** each rule comes from the opened
+  specifications, with pages in [docs/MSL.md](docs/MSL.md).
+  - Fast math is off for the file, and library calls are the `precise::` ones.
+  - Signed `+`, `-`, `*` and `<<` wrap.
+  - `/` and `%` give WGSL's results for a zero divisor and `MIN / -1`.
+  - Shift counts are taken modulo 32, and `>>` on `i32` is arithmetic.
+  - `bitcast` and `i32`↔`u32` conversions keep the bits.
+- **Tested on the GPU:** `msl/metaltest` is its own module, so this one does
+  not depend on go-macos/metal. It runs the emitted code on a Mac's GPU and
+  holds every result to WGSL's definition computed in Go:
+  - integers: 13 operations over 361 edge pairs, including `MIN`, −1, 0 and
+    shift counts 31–64;
+  - floats: `clamp` with low > high, `length`, `select`, `abs`, `min` and
+    `max`, with the flush-to-zero WGSL allows on subnormals.
+
+  With Metal's plain `a / b`, `1 / 0` comes back −1, where WGSL defines 1. The
+  test catches it.
+- **In use:** go-gfx/gpu2d's Metal kernel takes its coverage functions from
+  its WebGPU shader through this package, and stays byte-identical to its CPU
+  reference.
+
 Licence: see [LICENSE](LICENSE). The CTS data under `testdata/cts` is BSD-3
 (`testdata/cts/LICENSE-CTS.txt`).
