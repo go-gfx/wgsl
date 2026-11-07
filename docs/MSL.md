@@ -1,8 +1,14 @@
 # Emitting Metal Shading Language: design
 
-Status: design, nothing implemented. This note fixes the scope and the
-rules before code exists, with the sources they come from. Every rule below
-is now taken from an opened specification; none is left to confirm.
+Status: the first version is implemented (package `msl`, v0.5.0) and tested
+on the GPU (`msl/metaltest`). This note fixes the scope and the rules, with
+the sources they come from; every rule is taken from an opened
+specification. Two findings came from running the code rather than reading:
+- **`bitcast` and `i32`/`u32` conversions:** they are emitted as `as_type`,
+  since C++17 makes `uint` to `int` implementation-defined past `INT_MAX`.
+- **Subnormals:** the GPU flushes some of them to zero, which WGSL allows for
+  any input or output of a floating-point operation (`wgsl/index.bs`, "flush
+  to zero"). The test accepts that, and nothing else.
 
 ## Why
 

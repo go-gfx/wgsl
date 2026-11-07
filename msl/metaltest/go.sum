@@ -1,0 +1,6 @@
+github.com/ebitengine/purego v0.11.3 h1:OB+JLpdm7ioymhyA+6s5kbb/uOuYycAgL8NNTFc5MLg=
+github.com/ebitengine/purego v0.11.3/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
+github.com/go-macos/metal v0.6.0 h1:17qzYBLWo9D6zfiHC3YqKs6LJivke2MJ0Y1U51311FE=
+github.com/go-macos/metal v0.6.0/go.mod h1:BiclSGJgONDekug12CQtlINic9zMmXF7m/iA7bQn4hM=
+github.com/go-macos/objc v0.12.0 h1:/WmB4C1CQd5RkqBRvnHNljEFtOTvytPA9fkD87xuJVQ=
+github.com/go-macos/objc v0.12.0/go.mod h1:ao+SmTFBrkZdP+488hFTrSFvCtJ36McKKhNNOlcFXrQ=
