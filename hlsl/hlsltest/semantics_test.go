@@ -19,7 +19,7 @@ const intsSrc = `
 
 fn add(a: i32, b: i32) -> i32 { return a + b; }
 fn sub(a: i32, b: i32) -> i32 { return a - b; }
-fn mul(a: i32, b: i32) -> i32 { return a * b; }
+fn imul(a: i32, b: i32) -> i32 { return a * b; } // not mul: an HLSL intrinsic
 fn div(a: i32, b: i32) -> i32 { return a / b; }
 fn rem(a: i32, b: i32) -> i32 { return a % b; }
 fn neg(a: i32) -> i32 { return -a; }
@@ -47,7 +47,7 @@ fn run(@builtin(global_invocation_id) g: vec3<u32>) {
   let a = inp[2u * g.x];
   let b = inp[2u * g.x + 1u];
   let o = g.x * 17u;
-  outp[o + 0u] = add(a, b);   outp[o + 1u] = sub(a, b);   outp[o + 2u] = mul(a, b);
+  outp[o + 0u] = add(a, b);   outp[o + 1u] = sub(a, b);   outp[o + 2u] = imul(a, b);
   outp[o + 3u] = div(a, b);   outp[o + 4u] = rem(a, b);   outp[o + 5u] = neg(a);
   outp[o + 6u] = shl(a, b);   outp[o + 7u] = shr(a, b);   outp[o + 8u] = udiv(a, b);
   outp[o + 9u] = urem(a, b);  outp[o + 10u] = ushl(a, b); outp[o + 11u] = ushr(a, b);
@@ -399,7 +399,7 @@ func TestComparisonsOfNaNZerosInfinities(t *testing.T) {
 
 const loopsSrc = `
 @group(0) @binding(0) var<storage, read> inp: array<u32>;
-@group(0) @binding(1) var<storage, read_write> out: array<u32>;
+@group(0) @binding(1) var<storage, read_write> res: array<u32>; // not out: an HLSL keyword
 @group(0) @binding(2) var<uniform> u: vec4<u32>;
 
 @compute @workgroup_size(64)
@@ -416,9 +416,9 @@ fn run(@builtin(global_invocation_id) g: vec3<u32>) {
   for (var t = 0u; t < n; t++) { i++; }
   var m = -2147483640;
   for (var t = 0u; t < n; t++) { m--; }
-  out[g.x * 3u + 0u] = s;
-  out[g.x * 3u + 1u] = bitcast<u32>(i);
-  out[g.x * 3u + 2u] = bitcast<u32>(m);
+  res[g.x * 3u +0u] = s;
+  res[g.x * 3u +1u] = bitcast<u32>(i);
+  res[g.x * 3u +2u] = bitcast<u32>(m);
 }
 `
 
@@ -455,7 +455,7 @@ func TestLoopsAndWrapping(t *testing.T) {
 const structSrc = `
 struct Q { v: vec4f, w: vec2u, a: u32, b: i32 }   // 32 bytes
 @group(0) @binding(0) var<storage, read> src: array<Q>;
-@group(0) @binding(1) var<storage, read_write> out: array<u32>;
+@group(0) @binding(1) var<storage, read_write> res: array<u32>; // not out: an HLSL keyword
 @group(0) @binding(2) var<uniform> u: vec4<u32>;
 
 fn mix(q: Q, k: u32) -> u32 { return q.a * k + bitcast<u32>(q.b) + q.w.x; }
@@ -465,15 +465,15 @@ fn run(@builtin(global_invocation_id) g: vec3<u32>) {
   if (g.x >= u.x) { return; }
   let q = src[g.x];
   let o = g.x * 9u;
-  out[o + 0u] = bitcast<u32>(q.v.x);
-  out[o + 1u] = bitcast<u32>(q.v.y);
-  out[o + 2u] = bitcast<u32>(q.v.z);
-  out[o + 3u] = bitcast<u32>(q.v.w);
-  out[o + 4u] = q.w.x;
-  out[o + 5u] = q.w.y;
-  out[o + 6u] = q.a;
-  out[o + 7u] = bitcast<u32>(q.b);
-  out[o + 8u] = mix(q, 2654435761u);
+  res[o +0u] = bitcast<u32>(q.v.x);
+  res[o +1u] = bitcast<u32>(q.v.y);
+  res[o +2u] = bitcast<u32>(q.v.z);
+  res[o +3u] = bitcast<u32>(q.v.w);
+  res[o +4u] = q.w.x;
+  res[o +5u] = q.w.y;
+  res[o +6u] = q.a;
+  res[o +7u] = bitcast<u32>(q.b);
+  res[o +8u] = mix(q, 2654435761u);
 }
 `
 

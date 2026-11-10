@@ -81,9 +81,11 @@ func emitHLSL(t *testing.T, src, entry string) string {
 	return out
 }
 
-func compile(t *testing.T, src, entry string) []byte {
+func compile(t *testing.T, src, entry string) []byte { return compileWith(t, src, entry, compileFlags) }
+
+func compileWith(t *testing.T, src, entry string, flags uint32) []byte {
 	t.Helper()
-	dxbc, err := d3dcompiler.Compile([]byte(src), "emitted.hlsl", entry, "cs_5_0", compileFlags)
+	dxbc, err := d3dcompiler.Compile([]byte(src), "emitted.hlsl", entry, "cs_5_0", flags)
 	if err != nil {
 		t.Fatalf("D3DCompile of the emitted HLSL: %v\n%s", err, src)
 	}

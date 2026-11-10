@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/go-mswin/d3d11/d3dcompiler"
 )
 
 // gpu2d's whole raster kernel, emitted and compiled by D3DCompile for cs_5_0
@@ -57,7 +59,9 @@ fn run(@builtin(global_invocation_id) g: vec3<u32>) {
 // cannot fail proves nothing: this one shows the pins are what prevents it.
 func TestPreciseKeepsMulAndAddApart(t *testing.T) {
 	text := emitHLSL(t, madSrc, "run")
-	good := disassemble(t, compile(t, text, "run"))
+	// Without D3DCOMPILE_IEEE_STRICTNESS: the pins alone must keep them apart.
+	const optimised = d3dcompiler.FlagOptimizationLevel3
+	good := disassemble(t, compileWith(t, text, "run", optimised))
 	if hasMad(good) {
 		t.Fatalf("the emitted a*b+c was fused into a mad:\n%s", good)
 	}
@@ -69,7 +73,7 @@ func TestPreciseKeepsMulAndAddApart(t *testing.T) {
 	if mutant == text {
 		t.Fatal("the mutation changed nothing")
 	}
-	bad := disassemble(t, compile(t, mutant, "run"))
+	bad := disassemble(t, compileWith(t, mutant, "run", optimised))
 	if !hasMad(bad) {
 		t.Fatalf("without the pins the compiler did not fuse a*b+c, so the check above proves nothing:\n%s", bad)
 	}
