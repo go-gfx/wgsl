@@ -89,6 +89,28 @@ jobs:
           go test -count=1 -v ./... 2>&1 | tee out.txt
           if grep -q -E 'Validation (Error|Warning)|VUID-' out.txt; then echo "::error::the validation layer reported"; exit 1; fi
 
+  # The edge cases of docs/HLSL.md as compute dispatches of the emitted HLSL on
+  # Direct3D 11 WARP (the software rasterizer of Windows), through
+  # go-mswin/d3d11, in a nested module so that the core does not depend on it.
+  # Every emitted file is compiled by D3DCompile (cs_5_0, IEEE strictness,
+  # warnings as errors). No GPU is involved; WARP and d3dcompiler are oracles
+  # only.
+  d3d11:
+    name: WARP (hlsl/hlsltest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version: '1.27.3' }
+      - name: vet
+        working-directory: hlsl/hlsltest
+        run: go vet ./...
+      - name: run the edge cases
+        working-directory: hlsl/hlsltest
+        env:
+          CGO_ENABLED: "0"
+        run: go test -count=1 -v ./...
+
   test-386:
     name: test (linux/386)
     runs-on: ubuntu-latest
