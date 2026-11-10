@@ -133,5 +133,24 @@ needs; the rest is refused as a `*spirv.Error` with its position
   only by the `spirv-val` job and skipped where it is not installed). Not yet
   run on a GPU.
 
+## HLSL (package `hlsl`)
+
+`hlsl.Module(module, info, entries...)` emits High-Level Shading Language for
+Shader Model 5.0 (compile it for `cs_5_0` with `D3DCompile`, with
+`D3DCOMPILE_IEEE_STRICTNESS`): compute entry points with `read` storage arrays
+as `StructuredBuffer` at `t<binding>`, `read_write` ones as `RWStructuredBuffer`
+at `u<binding>`, a uniform as a `cbuffer` at `b<binding>`, the integer and
+float rules WGSL defines, and every float operation kept `precise` (no fused
+`mad`). It takes the whole of gpu2d's `kernel.wgsl`; the rest is refused as a
+`*hlsl.Error` with its position ([docs/HLSL.md](docs/HLSL.md): scope, rules and
+their sources).
+
+- **Checked on every platform:** the emitted kernel, and 24 refusals.
+- **Run on Direct3D 11 WARP** (the software rasterizer of Windows, in the
+  nested module `hlsl/hlsltest` on `windows-latest`, through go-mswin/d3d11):
+  every emitted file is compiled by `D3DCompile`, the integer, float and
+  conversion edge cases are held to WGSL's definition, and two break checks
+  show the tests can fail. No GPU has run it.
+
 Licence: see [LICENSE](LICENSE). The CTS data under `testdata/cts` is BSD-3
 (`testdata/cts/LICENSE-CTS.txt`).
