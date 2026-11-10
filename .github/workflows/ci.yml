@@ -41,6 +41,27 @@ jobs:
         with: { go-version: '1.27.3' }
       - run: go test ./...
 
+  # spirv-val, the Khronos validator, is the oracle for package spirv: this job
+  # installs SPIRV-Tools from the distribution and runs the spirv tests with the
+  # validator required (without SPIRV_VAL=required they skip it). Nothing else
+  # depends on it; no build or run does.
+  spirv-val:
+    name: spirv-val
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version: '1.27.3' }
+      - name: install SPIRV-Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y spirv-tools
+          spirv-val --version
+      - name: validate the emitted modules
+        env:
+          SPIRV_VAL: required
+        run: go test -count=1 -v ./spirv/
+
   test-386:
     name: test (linux/386)
     runs-on: ubuntu-latest
