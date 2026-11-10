@@ -330,20 +330,30 @@ func convertScalar(c *Const, to *ScalarType) (*Const, *evalError) {
 			return intConst(to, 0), nil
 		}
 		x = math.Trunc(x)
+		// The result is the value of the target type closest to the truncated
+		// source "and also exactly representable in the original floating point
+		// type" (wgsl/index.bs, "Floating Point Conversion", line 14756). For an
+		// f32 source the largest such i32 is 2147483520 and the largest such u32
+		// 4294967040: 2^31-1 and 2^32-1 are not f32 values. An AbstractFloat is
+		// an f64, which holds both; an f16 never reaches either bound.
+		maxI32, maxU32 := float64(math.MaxInt32), float64(math.MaxUint32)
+		if from.Kind == KF32 {
+			maxI32, maxU32 = float64(math.Nextafter32(1<<31, 0)), float64(math.Nextafter32(1<<32, 0))
+		}
 		switch to.Kind {
 		case KI32:
 			if x < math.MinInt32 {
 				x = math.MinInt32
 			}
-			if x > math.MaxInt32 {
-				x = math.MaxInt32
+			if x > maxI32 {
+				x = maxI32
 			}
 		case KU32:
 			if x < 0 {
 				x = 0
 			}
-			if x > math.MaxUint32 {
-				x = math.MaxUint32
+			if x > maxU32 {
+				x = maxU32
 			}
 		default:
 			if x < math.MinInt64 {
