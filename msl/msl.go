@@ -134,6 +134,21 @@ func emit(info *wgsl.Info, module bool, names []string) (string, error) {
 			return "", err
 		}
 	}
+	// WGSL lets a function call one declared further down; C++ does not, so
+	// every plain function is declared before any is defined.
+	var protos []string
+	for _, f := range info.Funcs {
+		if e.need[f] && f.Entry == nil {
+			sig, err := e.signature(f)
+			if err != nil {
+				return "", err
+			}
+			protos = append(protos, sig+";\n")
+		}
+	}
+	if len(protos) > 1 {
+		b.WriteString("\n" + strings.Join(protos, ""))
+	}
 	for _, f := range info.Funcs {
 		if !e.need[f] {
 			continue
@@ -598,47 +613,56 @@ func (e *emitter) emitKernel(b *strings.Builder, f *wgsl.FuncObj) error {
 	return nil
 }
 
-func (e *emitter) emitFunc(b *strings.Builder, f *wgsl.FuncObj) error {
-	if f.Entry != nil {
-		return e.emitKernel(b, f)
-	}
+// signature is the MSL declaration of a plain function, without its body.
+func (e *emitter) signature(f *wgsl.FuncObj) (string, error) {
 	ret := "void"
 	if _, void := f.Ret.(*wgsl.VoidType); !void {
 		var err error
 		if ret, err = typeName(f.Ret, f.Decl.Start); err != nil {
-			return err
+			return "", err
 		}
 	}
 	name, err := checkName(f.Name, f.Decl.Start)
 	if err != nil {
-		return err
+		return "", err
 	}
 	params := make([]string, len(f.Params))
 	for i, p := range f.Params {
 		t, err := typeName(p.Type, p.Decl.Start)
 		if err != nil {
-			return err
+			return "", err
 		}
 		n, err := checkName(p.Name, p.Decl.Start)
 		if err != nil {
-			return err
+			return "", err
 		}
 		params[i] = t + " " + n
 	}
 	if e.module {
 		vars, err := e.resources(f)
 		if err != nil {
-			return err
+			return "", err
 		}
 		for _, v := range vars {
 			t, err := e.bufferType(v)
 			if err != nil {
-				return err
+				return "", err
 			}
 			params = append(params, t)
 		}
 	}
-	fmt.Fprintf(b, "\nstatic %s %s(%s) ", ret, name, strings.Join(params, ", "))
+	return fmt.Sprintf("static %s %s(%s)", ret, name, strings.Join(params, ", ")), nil
+}
+
+func (e *emitter) emitFunc(b *strings.Builder, f *wgsl.FuncObj) error {
+	if f.Entry != nil {
+		return e.emitKernel(b, f)
+	}
+	sig, err := e.signature(f)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(b, "\n%s ", sig)
 	e.b, e.depth = b, 0
 	if err := e.block(f.Decl.Body); err != nil {
 		return err

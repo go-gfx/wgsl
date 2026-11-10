@@ -296,3 +296,26 @@ func TestComputeFloatToInteger(t *testing.T) {
 	nan := float32(math.NaN())
 	runModule(t, d, convSrc, "run", [][]byte{f32bits(nan), make([]byte, 8), u32s(1, 0, 0, 0)}, 1)
 }
+
+const forwardSrc = `
+@group(0) @binding(0) var<storage, read_write> out: array<u32>;
+
+fn first(i: u32) -> u32 { return second(i) + 1u; }   // second is declared below
+fn second(i: u32) -> u32 { return out[i] * 3u; }       // and reaches the buffer
+
+@compute @workgroup_size(32)
+fn run(@builtin(global_invocation_id) g: vec3<u32>) {
+  if (g.x >= 8u) { return; }
+  out[g.x] = first(g.x);
+}
+`
+
+func TestComputeCallsADeclaredLaterFunction(t *testing.T) {
+	d := device(t)
+	out := runModule(t, d, forwardSrc, "run", [][]byte{u32s(0, 1, 2, 3, 4, 5, 6, 7)}, 8)
+	for i := range 8 {
+		if got, want := word(out[0], i), uint32(i)*3+1; got != want {
+			t.Errorf("out[%d] = %d, want %d", i, got, want)
+		}
+	}
+}
