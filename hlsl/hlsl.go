@@ -758,12 +758,14 @@ func (e *emitter) stmt(s wgsl.Stmt) error {
 				return err
 			}
 		}
+		// The loop sits in a block of its own: fxc lets a loop variable clash with
+		// one of an earlier sibling loop (X3078), which WGSL's scopes do not.
 		e.b.WriteString(strings.Repeat("  ", e.depth))
-		fmt.Fprintf(e.b, "[loop] for (%s; %s; %s) ", init, cond, update)
+		fmt.Fprintf(e.b, "{ [loop] for (%s; %s; %s) ", init, cond, update)
 		if err := e.block(s.Body); err != nil {
 			return err
 		}
-		e.b.WriteString("\n")
+		e.b.WriteString(" }\n")
 	case *wgsl.While:
 		c, err := e.expr(s.Cond)
 		if err != nil {
