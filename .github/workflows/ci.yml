@@ -62,6 +62,33 @@ jobs:
           SPIRV_VAL: required
         run: go test -count=1 -v ./spirv/
 
+  # The edge cases of docs/MSL.md as compute dispatches of the emitted SPIR-V on
+  # lavapipe, through go-gfx/vulkan, in a nested module so that the core does
+  # not depend on it. lavapipe and the validation layer are oracles only.
+  # VULKAN_REQUIRE=1 makes a missing loader a failure; the validation layer is on
+  # and ANY message it prints fails the job.
+  vulkan:
+    name: lavapipe (spirv/vulkantest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version: '1.27.3' }
+      - name: install lavapipe and the validation layer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers vulkan-validationlayers vulkan-tools libvulkan1
+          vulkaninfo --summary
+      - name: run the edge cases
+        working-directory: spirv/vulkantest
+        env:
+          CGO_ENABLED: "0"
+          VULKAN_REQUIRE: "1"
+          VULKAN_VALIDATION: "1"
+        run: |
+          go test -count=1 -v ./... 2>&1 | tee out.txt
+          if grep -q -E 'Validation (Error|Warning)|VUID-' out.txt; then echo "::error::the validation layer reported"; exit 1; fi
+
   test-386:
     name: test (linux/386)
     runs-on: ubuntu-latest
