@@ -82,9 +82,9 @@ func TestCoverageEmits(t *testing.T) {
 func TestRefusals(t *testing.T) {
 	for _, tc := range []struct{ name, src, fn, want string }{
 		{"module-scope variable", "var<private> g: i32; fn f() -> i32 { return g; }", "f", "module-scope"},
-		{"loop", "fn f() -> i32 { var i = 0; loop { break; } return i; }", "f", "not supported"},
+		{"switch", "fn f() -> i32 { var i = 0; switch (i) { default { i = 1; } } return i; }", "f", "not supported"},
 		{"entry point", "@compute @workgroup_size(1) fn main() {}", "main", "entry point"},
-		{"f32 to i32", "fn f(x: f32) -> i32 { return i32(x); }", "f", "f32 to an integer"},
+		{"f32 vector to i32 vector", "fn f(x: vec2f) -> vec2i { return vec2i(x); }", "f", "vector"},
 		{"reserved name", "fn kernel() -> i32 { return 1; }", "kernel", "reserved"},
 		{"array", "fn f(a: array<i32, 4>) -> i32 { return 0; }", "f", "not supported"},
 	} {
