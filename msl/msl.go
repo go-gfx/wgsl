@@ -1,9 +1,11 @@
 // Package msl emits Metal Shading Language for the functions of a checked
 // WGSL module.
 //
-// It is the first version described in docs/MSL.md: plain functions (no
-// entry points, no module-scope variables, no loops, arrays or textures) over
-// bool, i32, u32, f32, their vectors and structures of those. Anything else is
+// Functions emits plain functions (no entry points, no module-scope
+// variables, no arrays or textures) over bool, i32, u32, f32, their vectors
+// and structures of those. Module emits compute entry points with the storage
+// and uniform buffers they use, loops, runtime-sized array indexing and f32 to
+// integer conversion (docs/MSL.md, "Compute modules"). Anything else is
 // refused with its position, never emitted approximately.
 //
 // Every rule that makes the emitted code compute what WGSL defines, rather
@@ -56,6 +58,12 @@ static inline int wgsl_shr(int a, uint s) {
   uint u = as_type<uint>(a) >> (s & 31u);
   return as_type<int>(select(u, u | ~(0xFFFFFFFFu >> (s & 31u)), a < 0));
 }
+// WGSL f32 to integer: truncate, then the nearest value of the integer type
+// that is also exactly representable in f32 (so u32 saturates at 4294967040,
+// i32 at 2147483520); a NaN gives an indeterminate value, here 0. C++ leaves
+// every out-of-range conversion undefined.
+static inline uint wgsl_f2u(float v) { return v >= 4294967040.0f ? 4294967040u : (v > 0.0f ? uint(v) : 0u); }
+static inline int wgsl_f2i(float v) { return v >= 2147483520.0f ? 2147483520 : (v <= -2147483648.0f ? INT_MIN : (v == v ? int(v) : 0)); }
 static inline float wgsl_length(float2 v) { return precise::sqrt(v.x * v.x + v.y * v.y); }
 static inline float wgsl_length(float3 v) { return precise::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
 static inline float wgsl_length(float4 v) { return precise::sqrt(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w); }
@@ -73,7 +81,24 @@ func (e *Error) Error() string { return fmt.Sprintf("msl: offset %d: %s", e.Offs
 // named functions with every function they call, in declaration order. m
 // must be the module info was checked from.
 func Functions(m *wgsl.Module, info *wgsl.Info, names ...string) (string, error) {
-	e := &emitter{info: info, need: map[*wgsl.FuncObj]bool{}}
+	return emit(info, false, names)
+}
+
+// Module emits Preamble, the structures the named compute entry points use,
+// the functions they call, and each entry point as a `kernel` function, in
+// declaration order. The module-scope variables the entry points reach are
+// storage and uniform buffers of group 0: each becomes a kernel argument at
+// `[[buffer(binding)]]`, and a function that uses one (itself or through a
+// callee) takes it as a trailing parameter, in binding order. A
+// @builtin(global_invocation_id) parameter becomes [[thread_position_in_grid]].
+// Everything else is refused as Functions refuses it (docs/MSL.md). m must be
+// the module info was checked from.
+func Module(m *wgsl.Module, info *wgsl.Info, entries ...string) (string, error) {
+	return emit(info, true, entries)
+}
+
+func emit(info *wgsl.Info, module bool, names []string) (string, error) {
+	e := &emitter{info: info, module: module, need: map[*wgsl.FuncObj]bool{}, res: map[*wgsl.FuncObj][]*wgsl.VarObj{}}
 	byName := map[string]*wgsl.FuncObj{}
 	for _, f := range info.Funcs {
 		byName[f.Name] = f
@@ -82,6 +107,18 @@ func Functions(m *wgsl.Module, info *wgsl.Info, names ...string) (string, error)
 		f, ok := byName[n]
 		if !ok {
 			return "", fmt.Errorf("msl: no function %q in the module", n)
+		}
+		if module {
+			if f.Entry == nil {
+				return "", &Error{f.Decl.Start, "function " + f.Name + " is not an entry point"}
+			}
+			if f.Entry.Stage != wgsl.StageCompute {
+				return "", &Error{f.Decl.Start, "entry point " + f.Name + " is a " + f.Entry.Stage.String() + " shader; only compute is supported"}
+			}
+			if f.Entry.WorkgroupSizeExprs != [3]wgsl.Expr{} {
+				return "", &Error{f.Decl.Start, "entry point " + f.Name + " has an override-expression workgroup size"}
+			}
+			e.entries = append(e.entries, f)
 		}
 		if err := e.require(f); err != nil {
 			return "", err
@@ -110,8 +147,12 @@ func Functions(m *wgsl.Module, info *wgsl.Info, names ...string) (string, error)
 
 type emitter struct {
 	info    *wgsl.Info
+	module  bool // Module rather than Functions
+	entries []*wgsl.FuncObj
 	need    map[*wgsl.FuncObj]bool
 	structs map[*wgsl.StructType]bool
+	host    map[*wgsl.StructType]bool // structures that live in a buffer: their layout must match C++'s
+	res     map[*wgsl.FuncObj][]*wgsl.VarObj
 	b       *strings.Builder
 	depth   int
 }
@@ -122,16 +163,33 @@ func (e *emitter) require(f *wgsl.FuncObj) error {
 	if e.need[f] {
 		return nil
 	}
-	if f.Entry != nil {
+	if !e.module {
+		if f.Entry != nil {
+			return &Error{f.Decl.Start, "function " + f.Name + " is an entry point"}
+		}
+		if len(f.Globals) > 0 {
+			return &Error{f.Decl.Start, fmt.Sprintf("function %s uses the module-scope %s", f.Name, f.Globals[0].ObjName())}
+		}
+	} else if f.Entry != nil && !slices.Contains(e.entries, f) {
 		return &Error{f.Decl.Start, "function " + f.Name + " is an entry point"}
 	}
-	if len(f.Globals) > 0 {
-		return &Error{f.Decl.Start, fmt.Sprintf("function %s uses the module-scope %s", f.Name, f.Globals[0].ObjName())}
-	}
 	e.need[f] = true
-	for _, p := range f.Params {
-		if err := e.useType(p.Type, p.Decl.Start); err != nil {
+	if f.Entry == nil {
+		for _, p := range f.Params {
+			if err := e.useType(p.Type, p.Decl.Start); err != nil {
+				return err
+			}
+		}
+	}
+	if e.module {
+		vars, err := e.resources(f)
+		if err != nil {
 			return err
+		}
+		for _, v := range vars {
+			if err := e.useBuffer(v); err != nil {
+				return err
+			}
 		}
 	}
 	if _, void := f.Ret.(*wgsl.VoidType); !void {
@@ -184,7 +242,149 @@ func walkStmt(s wgsl.Stmt, fn func(wgsl.Expr)) {
 		}
 	case *wgsl.CallStmt:
 		walkExpr(s.Call, fn)
+	case *wgsl.For:
+		if s.Init != nil {
+			walkStmt(s.Init, fn)
+		}
+		walkExpr(s.Cond, fn)
+		if s.Update != nil {
+			walkStmt(s.Update, fn)
+		}
+		walkStmt(s.Body, fn)
+	case *wgsl.While:
+		walkExpr(s.Cond, fn)
+		walkStmt(s.Body, fn)
+	case *wgsl.Loop:
+		for _, t := range s.Body {
+			walkStmt(t, fn)
+		}
+		if s.Cont != nil {
+			for _, t := range s.Cont.Stmts {
+				walkStmt(t, fn)
+			}
+		}
+	case *wgsl.IncDec:
+		walkExpr(s.X, fn)
 	}
+}
+
+// resources returns the storage and uniform buffers f uses, itself or through
+// the functions it calls, in binding order.
+func (e *emitter) resources(f *wgsl.FuncObj) ([]*wgsl.VarObj, error) {
+	if r, ok := e.res[f]; ok {
+		return r, nil
+	}
+	seen := map[*wgsl.VarObj]bool{}
+	var out []*wgsl.VarObj
+	var firstErr error
+	walkStmt(f.Decl.Body, func(x wgsl.Expr) {
+		switch x := x.(type) {
+		case *wgsl.Ident:
+			if v, ok := e.info.Objects[x].(*wgsl.VarObj); ok && v.Global && !seen[v] {
+				seen[v] = true
+				out = append(out, v)
+			}
+		case *wgsl.Call:
+			if g, ok := e.info.Objects[x.Fn].(*wgsl.FuncObj); ok {
+				sub, err := e.resources(g)
+				if err != nil && firstErr == nil {
+					firstErr = err
+				}
+				for _, v := range sub {
+					if !seen[v] {
+						seen[v] = true
+						out = append(out, v)
+					}
+				}
+			}
+		}
+	})
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	for _, v := range out {
+		if err := e.checkBuffer(v); err != nil {
+			return nil, err
+		}
+	}
+	slices.SortFunc(out, func(a, b *wgsl.VarObj) int { return int(*a.Binding - *b.Binding) })
+	e.res[f] = out
+	return out, nil
+}
+
+// checkBuffer refuses a module-scope variable that is not a group-0 storage or
+// uniform buffer of a supported shape.
+func (e *emitter) checkBuffer(v *wgsl.VarObj) error {
+	off := v.Decl.Start
+	if v.AS != wgsl.ASStorage && v.AS != wgsl.ASUniform {
+		return &Error{off, "the " + v.AS.String() + " variable " + v.Name + " is not supported yet (only storage and uniform buffers)"}
+	}
+	if v.Group == nil || v.Binding == nil {
+		return &Error{off, "the buffer " + v.Name + " has no @group and @binding"}
+	}
+	if *v.Group != 0 {
+		return &Error{off, fmt.Sprintf("the buffer %s is in group %d; only group 0 is supported (the binding is its buffer index)", v.Name, *v.Group)}
+	}
+	if *v.Binding < 0 || *v.Binding > 30 {
+		return &Error{off, fmt.Sprintf("the buffer %s is at binding %d; Metal has 31 buffer indices", v.Name, *v.Binding)}
+	}
+	if a, ok := v.Store.(*wgsl.ArrayType); ok {
+		if v.AS == wgsl.ASUniform {
+			return &Error{off, "the uniform array " + v.Name + " is not supported yet"}
+		}
+		if !a.Runtime {
+			return &Error{off, "the fixed-size array " + v.Name + " is not supported yet (only runtime-sized storage arrays)"}
+		}
+	}
+	return nil
+}
+
+// useBuffer records the structures a buffer holds, which must have the same
+// layout in C++ as in WGSL.
+func (e *emitter) useBuffer(v *wgsl.VarObj) error {
+	t := v.Store
+	if a, ok := t.(*wgsl.ArrayType); ok {
+		t = a.Elem
+	}
+	if e.host == nil {
+		e.host = map[*wgsl.StructType]bool{}
+	}
+	if s, ok := t.(*wgsl.StructType); ok {
+		e.host[s] = true
+	}
+	return e.useType(t, v.Decl.Start)
+}
+
+// layoutOK checks that a structure kept in a buffer has, in MSL, the offsets
+// and size WGSL's memory layout gives it (scalars and vectors only).
+func layoutOK(s *wgsl.StructType) error {
+	var off, maxAlign int64 = 0, 1
+	for _, m := range s.Members {
+		var size, align int64
+		switch t := m.Type.(type) {
+		case *wgsl.ScalarType:
+			size, align = 4, 4
+		case *wgsl.VecType:
+			switch t.N {
+			case 2:
+				size, align = 8, 8
+			default:
+				size, align = 16, 16 // MSL's float3 is 16 bytes, WGSL's vec3 is 12
+			}
+		default:
+			return &Error{m.Decl.Start, "member " + m.Name + " of " + s.Name + ": only scalars and vectors can live in a buffer yet"}
+		}
+		off = (off + align - 1) / align * align
+		if off != m.Offset {
+			return &Error{m.Decl.Start, fmt.Sprintf("member %s of %s is at offset %d in WGSL and %d in MSL", m.Name, s.Name, m.Offset, off)}
+		}
+		off += size
+		maxAlign = max(maxAlign, align)
+	}
+	if size := (off + maxAlign - 1) / maxAlign * maxAlign; size != s.Size {
+		return &Error{s.Decl.Start, fmt.Sprintf("%s is %d bytes in WGSL and %d in MSL", s.Name, s.Size, size)}
+	}
+	return nil
 }
 
 func walkExpr(x wgsl.Expr, fn func(wgsl.Expr)) {
@@ -284,7 +484,7 @@ var reserved = map[string]bool{
 	"sampler": true, "short": true, "signed": true, "sizeof": true, "static": true, "template": true,
 	"this": true, "thread": true, "threadgroup": true, "typedef": true, "typename": true, "uint": true,
 	"uint2": true, "uint3": true, "uint4": true, "union": true, "unsigned": true, "using": true,
-	"vertex": true, "virtual": true, "volatile": true, "INT_MIN": true, "select": true, "precise": true,
+	"vertex": true, "virtual": true, "main": true, "volatile": true, "INT_MIN": true, "select": true, "precise": true,
 }
 
 func checkName(n string, off int) (string, error) {
@@ -298,6 +498,11 @@ func (e *emitter) emitStruct(b *strings.Builder, s *wgsl.StructType) error {
 	name, err := checkName(s.Name, s.Decl.Start)
 	if err != nil {
 		return err
+	}
+	if e.host[s] {
+		if err := layoutOK(s); err != nil {
+			return err
+		}
 	}
 	fmt.Fprintf(b, "\nstruct %s {\n", name)
 	for _, m := range s.Members {
@@ -315,7 +520,88 @@ func (e *emitter) emitStruct(b *strings.Builder, s *wgsl.StructType) error {
 	return nil
 }
 
+// bufferType is the MSL declaration of buffer v, without its attribute: a
+// pointer for a runtime-sized storage array, a reference otherwise.
+func (e *emitter) bufferType(v *wgsl.VarObj) (string, error) {
+	n, err := checkName(v.Name, v.Decl.Start)
+	if err != nil {
+		return "", err
+	}
+	if a, ok := v.Store.(*wgsl.ArrayType); ok {
+		t, err := typeName(a.Elem, v.Decl.Start)
+		if err != nil {
+			return "", err
+		}
+		if v.Access == wgsl.AccessRead {
+			return "device const " + t + " *" + n, nil
+		}
+		return "device " + t + " *" + n, nil
+	}
+	t, err := typeName(v.Store, v.Decl.Start)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case v.AS == wgsl.ASUniform:
+		return "constant " + t + " &" + n, nil
+	case v.Access == wgsl.AccessRead:
+		return "device const " + t + " &" + n, nil
+	}
+	return "device " + t + " &" + n, nil
+}
+
+// builtins maps an entry point's @builtin input to its MSL attribute.
+var builtins = map[string]struct{ typ, attr string }{
+	"global_invocation_id": {"uint3", "thread_position_in_grid"},
+}
+
+// emitKernel writes entry point f as a kernel function.
+func (e *emitter) emitKernel(b *strings.Builder, f *wgsl.FuncObj) error {
+	name, err := checkName(f.Name, f.Decl.Start)
+	if err != nil {
+		return err
+	}
+	if _, void := f.Ret.(*wgsl.VoidType); !void {
+		return &Error{f.Decl.Start, "entry point " + f.Name + " returns a value"}
+	}
+	var params []string
+	vars, err := e.resources(f)
+	if err != nil {
+		return err
+	}
+	for _, v := range vars {
+		t, err := e.bufferType(v)
+		if err != nil {
+			return err
+		}
+		params = append(params, fmt.Sprintf("%s [[buffer(%d)]]", t, *v.Binding))
+	}
+	for _, in := range f.Entry.Inputs {
+		bi, ok := builtins[in.Builtin]
+		if in.Member != "" || !ok {
+			return &Error{f.Decl.Start, "input " + in.Name + " of " + f.Name + " is not a supported @builtin (only global_invocation_id)"}
+		}
+		n, err := checkName(in.Name, f.Params[in.Param].Decl.Start)
+		if err != nil {
+			return err
+		}
+		params = append(params, fmt.Sprintf("%s %s [[%s]]", bi.typ, n, bi.attr))
+	}
+	ws := f.Entry.WorkgroupSize
+	fmt.Fprintf(b, "\n// @workgroup_size(%d, %d, %d): the host dispatches threadgroups of this size.\n", ws[0], ws[1], ws[2])
+	fmt.Fprintf(b, "kernel void %s(%s) ", name, strings.Join(params, ",\n                   "))
+	e.b, e.depth = b, 0
+	if err := e.block(f.Decl.Body); err != nil {
+		return err
+	}
+	b.WriteString("\n")
+	return nil
+}
+
 func (e *emitter) emitFunc(b *strings.Builder, f *wgsl.FuncObj) error {
+	if f.Entry != nil {
+		return e.emitKernel(b, f)
+	}
 	ret := "void"
 	if _, void := f.Ret.(*wgsl.VoidType); !void {
 		var err error
@@ -338,6 +624,19 @@ func (e *emitter) emitFunc(b *strings.Builder, f *wgsl.FuncObj) error {
 			return err
 		}
 		params[i] = t + " " + n
+	}
+	if e.module {
+		vars, err := e.resources(f)
+		if err != nil {
+			return err
+		}
+		for _, v := range vars {
+			t, err := e.bufferType(v)
+			if err != nil {
+				return err
+			}
+			params = append(params, t)
+		}
 	}
 	fmt.Fprintf(b, "\nstatic %s %s(%s) ", ret, name, strings.Join(params, ", "))
 	e.b, e.depth = b, 0
@@ -385,10 +684,60 @@ func (e *emitter) stmt(s wgsl.Stmt) error {
 			return err
 		}
 		e.line("return %s;", x)
-	case *wgsl.DeclStmt:
-		return e.decl(s)
-	case *wgsl.Assign:
-		return e.assign(s)
+	case *wgsl.DeclStmt, *wgsl.Assign, *wgsl.IncDec, *wgsl.CallStmt:
+		t, err := e.simple(s)
+		if err != nil {
+			return err
+		}
+		e.line("%s;", t)
+	case *wgsl.Break:
+		e.line("break;")
+	case *wgsl.Continue:
+		e.line("continue;")
+	case *wgsl.For:
+		var init, cond, update string
+		var err error
+		if s.Init != nil {
+			if init, err = e.simple(s.Init); err != nil {
+				return err
+			}
+		}
+		if s.Cond != nil {
+			if cond, err = e.expr(s.Cond); err != nil {
+				return err
+			}
+		}
+		if s.Update != nil {
+			if update, err = e.simple(s.Update); err != nil {
+				return err
+			}
+		}
+		e.b.WriteString(strings.Repeat("  ", e.depth))
+		fmt.Fprintf(e.b, "for (%s; %s; %s) ", init, cond, update)
+		if err := e.block(s.Body); err != nil {
+			return err
+		}
+		e.b.WriteString("\n")
+	case *wgsl.While:
+		c, err := e.expr(s.Cond)
+		if err != nil {
+			return err
+		}
+		e.b.WriteString(strings.Repeat("  ", e.depth))
+		fmt.Fprintf(e.b, "while (%s) ", c)
+		if err := e.block(s.Body); err != nil {
+			return err
+		}
+		e.b.WriteString("\n")
+	case *wgsl.Loop:
+		if s.Cont != nil {
+			return &Error{s.Start, "a loop with a continuing block is not supported yet"}
+		}
+		e.b.WriteString(strings.Repeat("  ", e.depth) + "while (true) ")
+		if err := e.block(&wgsl.Block{Stmts: s.Body}); err != nil {
+			return err
+		}
+		e.b.WriteString("\n")
 	case *wgsl.If:
 		e.b.WriteString(strings.Repeat("  ", e.depth))
 		if err := e.ifStmt(s); err != nil {
@@ -423,7 +772,47 @@ func (e *emitter) ifStmt(s *wgsl.If) error {
 	return nil
 }
 
-func (e *emitter) decl(s *wgsl.DeclStmt) error {
+// simple is a statement that may head a for loop, as text without its
+// semicolon: a declaration, an assignment, an increment or a call.
+func (e *emitter) simple(s wgsl.Stmt) (string, error) {
+	switch s := s.(type) {
+	case *wgsl.DeclStmt:
+		return e.decl(s)
+	case *wgsl.Assign:
+		return e.assign(s)
+	case *wgsl.IncDec:
+		return e.incdec(s)
+	case *wgsl.CallStmt:
+		return e.expr(s.Call)
+	}
+	return "", &Error{s.NodeSpan().Start, fmt.Sprintf("statement %T is not supported here", s)}
+}
+
+// incdec is x++ or x--. An i32 goes through wgsl_add so that it wraps; the
+// operand is written twice, so it must not contain a call.
+func (e *emitter) incdec(s *wgsl.IncDec) (string, error) {
+	x, err := e.expr(s.X)
+	if err != nil {
+		return "", err
+	}
+	k, _ := elemKind(e.valueType(s.X))
+	if k != wgsl.KI32 {
+		return x + s.Op, nil
+	}
+	hasCall := false
+	walkExpr(s.X, func(y wgsl.Expr) {
+		if _, ok := y.(*wgsl.Call); ok {
+			hasCall = true
+		}
+	})
+	if hasCall {
+		return "", &Error{s.Start, "an i32 " + s.Op + " of an operand with a call is not supported yet"}
+	}
+	f := map[string]string{"++": "wgsl_add", "--": "wgsl_sub"}[s.Op]
+	return fmt.Sprintf("%s = %s(%s, 1)", x, f, x), nil
+}
+
+func (e *emitter) decl(s *wgsl.DeclStmt) (string, error) {
 	var (
 		name string
 		init wgsl.Expr
@@ -438,54 +827,50 @@ func (e *emitter) decl(s *wgsl.DeclStmt) error {
 		name, init, off = d.Name, d.Init, d.Start
 		t = e.info.DeclTypes[d]
 	default:
-		return &Error{s.Start, fmt.Sprintf("declaration %T is not supported yet", d)}
+		return "", &Error{s.Start, fmt.Sprintf("declaration %T is not supported yet", d)}
 	}
 	if err := e.useType(t, off); err != nil {
-		return err
+		return "", err
 	}
 	tn, err := typeName(t, off)
 	if err != nil {
-		return err
+		return "", err
 	}
 	n, err := checkName(name, off)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if init == nil { // WGSL zero-initialises a var
-		e.line("%s %s = %s(0);", tn, n, tn)
-		return nil
+		return fmt.Sprintf("%s %s = %s(0)", tn, n, tn), nil
 	}
 	x, err := e.expr(init)
 	if err != nil {
-		return err
+		return "", err
 	}
-	e.line("%s %s = %s;", tn, n, x)
-	return nil
+	return fmt.Sprintf("%s %s = %s", tn, n, x), nil
 }
 
-func (e *emitter) assign(s *wgsl.Assign) error {
+func (e *emitter) assign(s *wgsl.Assign) (string, error) {
 	if s.LHS == nil {
-		return &Error{s.Start, "a phony assignment is not supported yet"}
+		return "", &Error{s.Start, "a phony assignment is not supported yet"}
 	}
 	lhs, err := e.expr(s.LHS)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if s.Op == "=" {
 		rhs, err := e.expr(s.RHS)
 		if err != nil {
-			return err
+			return "", err
 		}
-		e.line("%s = %s;", lhs, rhs)
-		return nil
+		return fmt.Sprintf("%s = %s", lhs, rhs), nil
 	}
 	op := strings.TrimSuffix(s.Op, "=")
 	rhs, err := e.binary(op, s.LHS, s.RHS, e.valueType(s.LHS), s.Start)
 	if err != nil {
-		return err
+		return "", err
 	}
-	e.line("%s = %s;", lhs, rhs)
-	return nil
+	return fmt.Sprintf("%s = %s", lhs, rhs), nil
 }
 
 // valueType is the type x has as a value: its concretised type, with the
@@ -531,7 +916,7 @@ func (e *emitter) expr(x wgsl.Expr) (string, error) {
 		case *wgsl.ParamObj:
 			return checkName(o.Name, x.Start)
 		case *wgsl.VarObj:
-			if o.Global {
+			if o.Global && !e.module {
 				return "", &Error{x.Start, "module-scope variable " + o.Name}
 			}
 			return checkName(o.Name, x.Start)
@@ -548,6 +933,18 @@ func (e *emitter) expr(x wgsl.Expr) (string, error) {
 			return "", err
 		}
 		return base + "." + x.Name, nil
+	case *wgsl.Index:
+		// Not bounds-checked: WGSL clamps or zeroes an out-of-range index, and a
+		// runtime-sized array's length is not known here (docs/MSL.md, rule 7).
+		base, err := e.expr(x.X)
+		if err != nil {
+			return "", err
+		}
+		i, err := e.expr(x.I)
+		if err != nil {
+			return "", err
+		}
+		return base + "[" + i + "]", nil
 	case *wgsl.Unary:
 		return e.unary(x, t)
 	case *wgsl.Binary:
@@ -729,7 +1126,24 @@ func (e *emitter) call(x *wgsl.Call, t wgsl.Type) (string, error) {
 	switch o := e.info.Objects[x.Fn].(type) {
 	case *wgsl.FuncObj:
 		n, err := checkName(o.Name, x.Start)
-		return n + "(" + all + ")", err
+		if err != nil {
+			return "", err
+		}
+		if e.module { // the buffers the callee reaches, as trailing arguments
+			vars, err := e.resources(o)
+			if err != nil {
+				return "", err
+			}
+			for _, v := range vars {
+				bn, err := checkName(v.Name, x.Start)
+				if err != nil {
+					return "", err
+				}
+				args = append(args, bn)
+			}
+			all = strings.Join(args, ", ")
+		}
+		return n + "(" + all + ")", nil
 	case *wgsl.BuiltinObj:
 		at := e.valueType(x.Args[0])
 		k, _ := elemKind(at)
@@ -783,12 +1197,20 @@ func (e *emitter) construct(x *wgsl.Call, ct wgsl.Type, args []string) (string, 
 		// never a value conversion.
 		return "as_type<" + tn + ">(" + args[0] + ")", nil
 	}
+	if v, ok := ct.(*wgsl.VecType); ok && len(x.Args) == 1 {
+		from, _ := elemKind(e.valueType(x.Args[0]))
+		if (v.Elem.Kind == wgsl.KI32 || v.Elem.Kind == wgsl.KU32) && from == wgsl.KF32 {
+			return "", &Error{x.Start, "conversion of an f32 vector to an integer vector is not supported yet"}
+		}
+	}
 	if s, ok := ct.(*wgsl.ScalarType); ok && len(x.Args) == 1 {
 		from, _ := elemKind(e.valueType(x.Args[0]))
 		switch {
-		case (s.Kind == wgsl.KI32 || s.Kind == wgsl.KU32) && from == wgsl.KF32:
+		case s.Kind == wgsl.KI32 && from == wgsl.KF32:
 			// WGSL clamps an out-of-range float; C++ leaves it undefined.
-			return "", &Error{x.Start, "conversion from f32 to an integer is not supported yet"}
+			return "wgsl_f2i(" + args[0] + ")", nil
+		case s.Kind == wgsl.KU32 && from == wgsl.KF32:
+			return "wgsl_f2u(" + args[0] + ")", nil
 		case (s.Kind == wgsl.KI32 && from == wgsl.KU32) || (s.Kind == wgsl.KU32 && from == wgsl.KI32):
 			// WGSL reinterprets the bits between i32 and u32; C++17 makes
 			// uint to int implementation-defined past INT_MAX.

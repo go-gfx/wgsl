@@ -1,7 +1,7 @@
 # Emitting Metal Shading Language: design
 
-Status: the first version is implemented (package `msl`, v0.5.0) and tested
-on the GPU (`msl/metaltest`). This note fixes the scope and the rules, with
+Status: implemented (package `msl`; the compute modules below since v0.6.0)
+and tested on the GPU (`msl/metaltest`). This note fixes the scope and the rules, with
 the sources they come from; every rule is taken from an opened
 specification. Two findings came from running the code rather than reading:
 - **`bitcast` and `i32`/`u32` conversions:** they are emitted as `as_type`,
@@ -33,9 +33,11 @@ gpu2d's `cornerCenter` and `coverage` use:
 - **Constructors:** scalar conversions and vector constructors.
 - **Builtins:** `abs`, `clamp`, `min`, `max`, `length`, `sqrt`, `select`,
   `floor`.
-- **Out of scope:** loops, arrays, pointers, textures and samplers, entry
-  points, bindings. A module that uses them is refused with the construct and
-  its position, never emitted approximately.
+- **Out of scope of `Functions`:** loops, arrays, pointers, textures and
+  samplers, entry points, bindings. (Loops are accepted since v0.6.0, and
+  `Module` takes entry points and buffers: see "Compute modules".) What is
+  still out of scope is refused with the construct and its position, never
+  emitted approximately.
 
 The emitter reads a module that `Check` accepted, and its `Info`: the checker
 has already resolved every type, so the emitter never infers one.
@@ -97,6 +99,70 @@ these pages:
      same guarded divisor `d`, it is emitted as `e1 - (e1 / d) * d`, then
      forced to 0 in the two special cases. Unsigned `%` uses MSL's `%` with
      `d = select(e2, 1, e2 == 0)` and gives 0 when `e2` is zero.
+
+## Compute modules (`msl.Module`)
+
+`Module` emits compute entry points as `kernel` functions, so that the whole
+raster kernel of go-gfx/gpu2d (`kernel.wgsl`, docs/NATIVE.md decision 1) can be
+generated rather than hand-written. What it adds to the scope above:
+
+- **Entry points:** `@compute` only, returning nothing, with
+  `@builtin(global_invocation_id)` as its only input (emitted as
+  `uint3 name [[thread_position_in_grid]]`). Other builtins, struct IO and the
+  other stages are refused. MSL has no static workgroup size: the emitted file
+  carries `@workgroup_size` as a comment, and the host dispatches threadgroups
+  of that size.
+- **Module-scope variables:** storage buffers (`read`, `read_write`) and
+  uniform buffers of group 0, nothing else (no `private`, `workgroup`,
+  textures, samplers, atomics, overrides, or other groups). The binding is the
+  buffer index (at most 30). A runtime-sized storage array is a pointer
+  (`device const T *`, or `device T *` for `read_write`); any other buffer is
+  a reference (`constant T &` for uniform, `device [const] T &` for storage).
+  A function that uses a buffer, itself or through a callee, takes it as a
+  trailing parameter in binding order, and its callers pass it.
+- **Structures in buffers** must have, in MSL, the offsets and size WGSL's
+  memory layout gives them. Members are scalars and vectors; a `vec3` member
+  is refused whenever it changes a later offset or the size (MSL's `float3` is
+  16 bytes, WGSL's `vec3<f32>` is 12). Anything else is an error that names
+  both offsets.
+- **Statements:** `for`, `while`, `loop` (without a `continuing` block),
+  `break`, `continue`, `++` and `--`, and calls as statements. `switch`,
+  `discard`, `break if` and `continuing` are refused. On an `i32`, `++` and
+  `--` are emitted through `wgsl_add` and `wgsl_sub` so that they wrap; the
+  operand is written twice, so one containing a call is refused.
+- **Expressions:** indexing (rule 7), and `u32(f32)` and `i32(f32)` (rule 6).
+- **Names:** `main` joins the reserved ones (MSL does not allow a kernel
+  called `main`).
+
+Two more rules, each with its source:
+
+6. **`f32` to integer conversion** (gpuweb `wgsl/index.bs`, "Floating Point
+   Conversion", line 14751).
+   - **WGSL:** a NaN gives an indeterminate value. Otherwise the result is
+     the value of the integer type closest to `truncate(X)` *and also exactly
+     representable in the original floating-point type*.
+   - **Consequence:** `u32` saturates at 4294967040, the largest `f32` below
+     2³², not at 4294967295, which `f32` cannot represent; `i32` saturates at
+     2147483520 and −2147483648. The constant evaluator of this package
+     clamps to 4294967295 and 2147483647 for a *constant* conversion: that
+     disagrees with the specification text for an `f32` source, and is not
+     what the emitted code does.
+   - **MSL:** a conversion of an out-of-range float is undefined in C++.
+   - **The rule:** `wgsl_f2u` and `wgsl_f2i` in the preamble, which give 0 for
+     a NaN. Conversions of `f32` vectors to integer vectors are refused.
+7. **Indexing is not bounds-checked.**
+   - **WGSL** (`index.bs`, "Out-of-Bounds Access", lines 4151–4199): an
+     out-of-bounds access is a dynamic error whose outcomes are limited to a
+     trap, a load of the zero value or of any location of the bound buffer,
+     and a store to any location of the bound buffer or none at all. It never
+     reads or writes outside the buffer.
+   - **MSL:** the access is undefined and may touch memory outside the
+     buffer, and a runtime-sized array's length is not known to the kernel.
+   - **The rule:** `a[i]` is emitted as is. The host sizes its buffers, and a
+     kernel is only correct if its indices are in range by construction.
+     `arrayLength` is refused. This is the one place where `Module` does not
+     reproduce what WGSL defines; a kernel that needs the clamp must clamp
+     itself.
 
 ## How it will be proved
 
