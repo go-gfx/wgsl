@@ -111,7 +111,7 @@ func (e *emitter) ref(x wgsl.Expr) (*place, error) {
 		default:
 			return nil, &Error{x.Start, "indexing " + describe(base.t) + " is not supported yet"}
 		}
-		et, err := e.typeID(elem, x.Start)
+		et, err := e.memTypeID(elem, x.Start) // an element of a buffer array may be a laid-out structure
 		if err != nil {
 			return nil, err
 		}
@@ -132,8 +132,28 @@ func (e *emitter) chain(base *place, elem uint32, t wgsl.Type, idx uint32) *plac
 
 // load reads a scalar or vector from p.
 func (e *emitter) load(p *place, x wgsl.Expr) (uint32, error) {
-	switch p.t.(type) {
+	switch pt := p.t.(type) {
 	case *wgsl.ScalarType, *wgsl.VecType:
+	case *wgsl.StructType:
+		// A whole structure of scalars and vectors: each member is loaded through
+		// its own access chain and the value is built in the undecorated struct type.
+		ty, err := e.typeID(pt, x.NodeSpan().Start)
+		if err != nil {
+			return 0, err
+		}
+		vals := make([]uint32, len(pt.Members))
+		for i, m := range pt.Members {
+			mt, err := e.typeID(m.Type, x.NodeSpan().Start)
+			if err != nil {
+				return 0, err
+			}
+			mp := e.chain(p, mt, m.Type, e.u32Const(uint32(i)))
+			vals[i] = e.id()
+			inst(&e.fn.body, OpLoad, mt, vals[i], mp.id)
+		}
+		r := e.id()
+		inst(&e.fn.body, OpCompositeConstruct, append([]uint32{ty, r}, vals...)...)
+		return r, nil
 	default:
 		return 0, &Error{x.NodeSpan().Start, "loading " + describe(p.t) + " is not supported yet"}
 	}
@@ -187,6 +207,20 @@ func (e *emitter) extract(x *wgsl.Member, t wgsl.Type) (uint32, error) {
 	v, err := e.rvalue(x.X)
 	if err != nil {
 		return 0, err
+	}
+	if st, ok := e.valueType(x.X).(*wgsl.StructType); ok {
+		for i, m := range st.Members {
+			if m.Name == x.Name {
+				ty, err := e.typeID(t, x.Start)
+				if err != nil {
+					return 0, err
+				}
+				r := e.id()
+				inst(&e.fn.body, OpCompositeExtract, ty, r, v, uint32(i))
+				return r, nil
+			}
+		}
+		return 0, &Error{x.Start, "no member " + x.Name}
 	}
 	if _, ok := e.valueType(x.X).(*wgsl.VecType); !ok {
 		return 0, &Error{x.Start, "member access on a " + describe(e.valueType(x.X)) + " value is not supported yet"}
@@ -309,11 +343,16 @@ func (e *emitter) binop(op string, ta, tb wgsl.Type, a, b uint32, rt wgsl.Type, 
 			return r, nil
 		case ka == wgsl.KU32 && scalarA:
 			return e.udivrem(op, a, b, ty), nil
+		case ka == wgsl.KI32 && scalarA:
+			return e.sdivrem(op, a, b, ty), nil
 		}
 		return 0, &Error{off, "division of " + describe(ta) + " is not supported yet"}
 	case "%":
 		if ka == wgsl.KU32 && scalarA {
 			return e.udivrem(op, a, b, ty), nil
+		}
+		if ka == wgsl.KI32 && scalarA {
+			return e.sdivrem(op, a, b, ty), nil
 		}
 		return 0, &Error{off, "remainder of " + describe(ta) + " is not supported yet"}
 	case "&", "|", "^":
@@ -326,7 +365,7 @@ func (e *emitter) binop(op string, ta, tb wgsl.Type, a, b uint32, rt wgsl.Type, 
 	case "&&", "||":
 		// WGSL short-circuits; OpLogicalAnd and OpLogicalOr do not, which is the
 		// same only when the right operand has no side effect to skip.
-		if hasCall(rhs) {
+		if e.hasUserCall(rhs) {
 			return 0, &Error{off, "a call on the right of " + op + " is not supported yet"}
 		}
 		return bodyOp(map[string]uint32{"&&": OpLogicalAnd, "||": OpLogicalOr}[op], a, b, ty), nil
@@ -405,6 +444,34 @@ func (e *emitter) udivrem(op string, a, b, ty uint32) uint32 {
 	return r
 }
 
+// sdivrem is i32 division or remainder with WGSL's definition of the two cases
+// OpSDiv and OpSRem leave undefined (wgsl/index.bs, "Arithmetic Expressions"):
+// a zero divisor, and the most negative value divided by -1. In both the
+// divisor is replaced by 1, which gives e1 for / (the result WGSL defines) and
+// 0 for % (likewise). Otherwise OpSDiv truncates toward zero and OpSRem takes
+// the sign of the dividend, as WGSL does.
+func (e *emitter) sdivrem(op string, a, b, ty uint32) uint32 {
+	bty, _ := e.typeID(&wgsl.ScalarType{Kind: wgsl.KBool}, 0)
+	zero, one := e.scalarConst(ty, 0), e.scalarConst(ty, 1)
+	minInt, negOne := e.scalarConst(ty, 0x80000000), e.scalarConst(ty, 0xFFFFFFFF)
+	bz, amin, bneg := e.id(), e.id(), e.id()
+	inst(&e.fn.body, OpIEqual, bty, bz, b, zero)
+	inst(&e.fn.body, OpIEqual, bty, amin, a, minInt)
+	inst(&e.fn.body, OpIEqual, bty, bneg, b, negOne)
+	ov, bad := e.id(), e.id()
+	inst(&e.fn.body, OpLogicalAnd, bty, ov, amin, bneg)
+	inst(&e.fn.body, OpLogicalOr, bty, bad, bz, ov)
+	d := e.id()
+	inst(&e.fn.body, OpSelect, ty, d, bad, one, b)
+	code := uint32(OpSDiv)
+	if op == "%" {
+		code = OpSRem
+	}
+	r := e.id()
+	inst(&e.fn.body, code, ty, r, a, d)
+	return r
+}
+
 // call is a call of a function, a constructor, a conversion or a built-in.
 func (e *emitter) call(x *wgsl.Call) (uint32, error) {
 	if ct, ok := e.info.TypeSpecs[x.Fn]; ok {
@@ -458,7 +525,7 @@ func (e *emitter) call(x *wgsl.Call) (uint32, error) {
 			inst(&e.fn.body, OpSelect, ty, r, c, t, f) // condition, then the true value, then the false one
 			return r, nil
 		}
-		return 0, &Error{x.Start, "builtin " + o.Name + " is not supported yet"}
+		return e.builtin(x, o.Name)
 	}
 	return 0, &Error{x.Start, "call of " + x.Fn.Name + " is not supported yet"}
 }
@@ -500,6 +567,10 @@ func (e *emitter) construct(x *wgsl.Call, ct wgsl.Type) (uint32, error) {
 			r := e.id()
 			inst(&e.fn.body, code, ty, r, args[0])
 			return r, nil
+		case (ct.Kind == wgsl.KU32 || ct.Kind == wgsl.KI32) && from == wgsl.KF32:
+			if _, scalar := elemKind(concrete(e.valueType(x.Args[0]))); scalar {
+				return e.f2int(ct.Kind, ty, args[0]), nil
+			}
 		}
 		return 0, &Error{x.Start, "conversion to " + describe(ct) + " is not supported yet"}
 	case *wgsl.VecType:

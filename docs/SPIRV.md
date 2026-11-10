@@ -1,8 +1,9 @@
 # Emitting SPIR-V: the first subset (W1)
 
-Status: implemented (package `spirv`, since v0.7.0), checked structurally on
-every platform and validated by `spirv-val` in CI. Not yet run on a GPU: that is
-go-gfx/vulkan's milestone V1, and the edge cases of docs/MSL.md are W2.
+Status: implemented (package `spirv`, since v0.7.0; complete for gpu2d's whole
+kernel since W2), checked structurally on every platform, validated by
+`spirv-val` in CI, and run on lavapipe through go-gfx/vulkan (`spirv/vulkantest`).
+RADV on fractal is pending.
 
 It is the second emitter of docs/NATIVE.md (go-gfx/gpu2d), decision 1: the
 WGSL raster kernel is compiled to Metal by `msl`, to SPIR-V by this package
@@ -34,10 +35,56 @@ byte stream). It emits the named compute entry points and what they reach.
   `bitcast`, `i32`/`u32` conversions in both directions, `f32(i32|u32)`, vector
   constructors, and the `select` built-in.
 
-**Refused for now (W2):** signed `/` and `%`, `f32` to integer conversion,
-float `%`, comparisons of vectors, every other built-in function, whole
-structures in buffers, structure locals, `switch`, `continuing`, `discard`,
-`override`, other stages and builtins.
+**Added by W2** (all of gpu2d's `kernel.wgsl`, which is emitted verbatim and
+validated by `spirv-val`, see "W2"): signed `/` and `%`, `f32` to `u32` and
+`i32`, the built-ins `abs`, `min`, `max`, `clamp`, `length`, `sqrt` and
+`floor`, whole structures of scalars and vectors as the elements of a storage
+array, read into a `let`, passed to functions and read member by member, and
+`&&`/`||` with built-ins or constructors on the right.
+
+**Still refused:** float `%`, comparisons of vectors, vector `/` and `%` on
+`i32`, `f32` vector to integer vector conversions, every other built-in
+function, structures written to a buffer, structure `var`s, nested structures,
+`switch`, `continuing`, `discard`, `override`, other stages and builtins.
+
+## W2: the rules added, with their sources
+
+- **Signed `/` and `%`** (`wgsl/index.bs`, "Arithmetic Expressions"; the same
+  rules as docs/MSL.md 5): a zero divisor gives `e1` for `/` and 0 for `%`; the
+  most negative `i32` over -1 gives `e1` and 0. `OpSDiv` and `OpSRem` leave
+  those cases undefined, so the divisor is replaced by 1 when
+  `e2 == 0 || (e1 == MIN && e2 == -1)`: `e1 / 1` is `e1` and `e1 % 1` is 0.
+  `OpSDiv` truncates toward zero and `OpSRem` takes the sign of the dividend,
+  as WGSL does.
+- **`f32` to integer** (docs/MSL.md rule 6): `OpConvertFToU` and
+  `OpConvertFToS` are undefined out of range, so the operand is first clamped
+  with comparisons and selects to [0, 4294967040] or [-2147483648, 2147483520]
+  (the values `f32` can hold nearest the integer limits), and a NaN, which WGSL
+  leaves indeterminate, gives 0 (never converted).
+- **Built-ins** use the GLSL.std.450 instruction set (`FAbs`, `FMin`, `SMin`,
+  `UMin`, `FMax`, `SMax`, `UMax`, `Sqrt`, `Floor`; numbers from SPIRV-Headers'
+  `extinst.glsl.std.450.grammar.json`). `clamp` is `min(max(e, low), high)`,
+  WGSL's definition. `abs` of an `i32` is `select(e, 0 - e, e < 0)` so that
+  `abs(MIN)` is `MIN`. **`length`** is not the GLSL `Length`: it is the sum of
+  squares in order, each step `NoContraction`, then `Sqrt`, as docs/MSL.md rule 2
+  has it.
+- **Structures in buffers**: the element of a storage array is an `OpTypeStruct`
+  with the checker's `Offset`s and the array's `ArrayStride`; it is loaded
+  member by member (one access chain and one `OpLoad` each) into a plain
+  `OpTypeStruct` of the same members, so the decorated type never leaves memory.
+- **`&&` and `||`** refuse only a call of the module's own functions on the
+  right; built-ins and constructors have no effect to skip.
+
+How W2 is checked: `testdata/kernel_gpu2d.wgsl` (gpu2d's kernel, verbatim) goes
+through the structural tests and `spirv-val` on every change; the nested module
+`spirv/vulkantest` runs the edge cases of docs/MSL.md as compute dispatches
+through go-gfx/vulkan (integer wrap, zero divisors, `MIN / -1`, shift counts,
+NaN, signed zeros, infinities, conversion saturation compared with the checker's
+constant evaluator, loops, structures in buffers) and measures the rounding of
+`sqrt` and `length` against the correctly rounded value. On lavapipe (CI):
+every case equals WGSL's definition, and `sqrt` and `length` match the
+correctly rounded value on all inputs measured. **RADV (fractal) is pending**:
+the host does not answer.
 
 **Options:** `RoundingModeRTE` declares the capability and the execution mode
 for 32-bit floats, so that `+`, `-`, `*` and `/` are correctly rounded. Every

@@ -160,6 +160,7 @@ type emitter struct {
 	info *wgsl.Info
 	opts Options
 	next uint32
+	glsl uint32 // the OpExtInstImport of GLSL.std.450, 0 until a built-in needs it
 
 	annot  []uint32 // decorations
 	names  []uint32 // OpName
@@ -231,6 +232,9 @@ func (e *emitter) assemble(eps []*wgsl.FuncObj) []uint32 {
 	inst(&out, OpCapability, CapabilityShader)
 	if e.opts.RoundingModeRTE {
 		inst(&out, OpCapability, CapabilityRoundingModeRTE)
+	}
+	if e.glsl != 0 { // after the capabilities and extensions, before the memory model (section 2.4)
+		inst(&out, OpExtInstImport, append([]uint32{e.glsl}, str("GLSL.std.450")...)...)
 	}
 	inst(&out, OpMemoryModel, AddressingModelLogical, MemoryModelGLSL450)
 	for _, f := range eps {
@@ -384,8 +388,71 @@ func (e *emitter) typeID(t wgsl.Type, off int) (uint32, error) {
 		return id, nil
 	case *wgsl.RefType:
 		return e.typeID(t.Elem, off)
+	case *wgsl.StructType:
+		// The value type of a structure of scalars and vectors: no layout
+		// decorations, which belong to the memory form (memTypeID).
+		key := "struct." + t.Name
+		if id, ok := e.types[key]; ok {
+			return id, nil
+		}
+		members := make([]uint32, len(t.Members))
+		for i, m := range t.Members {
+			if _, _, ok := layoutOf(m.Type); !ok {
+				return 0, &Error{off, "member " + m.Name + " of " + t.Name + " is not a scalar or vector (not supported yet)"}
+			}
+			var err error
+			if members[i], err = e.typeID(m.Type, off); err != nil {
+				return 0, err
+			}
+		}
+		id := e.id()
+		inst(&e.decls, OpTypeStruct, append([]uint32{id}, members...)...)
+		inst(&e.names, OpName, append([]uint32{id}, str(t.Name)...)...)
+		e.types[key] = id
+		return id, nil
 	}
 	return 0, &Error{off, "type " + t.String() + " is not supported yet"}
+}
+
+// memTypeID is the type of a value as it lies in a buffer: a structure with
+// its members' Offset decorations (section 2.16.2, "Composite" layout rules via
+// the checker's own layout), a scalar or vector as is. A struct is loaded
+// member by member into its undecorated value type, so the decorated type never
+// leaves a buffer.
+func (e *emitter) memTypeID(t wgsl.Type, off int) (uint32, error) {
+	st, ok := t.(*wgsl.StructType)
+	if !ok {
+		return e.typeID(t, off)
+	}
+	key := "lstruct." + st.Name
+	if id, ok := e.types[key]; ok {
+		return id, nil
+	}
+	members := make([]uint32, len(st.Members))
+	for i, m := range st.Members {
+		if _, _, ok := layoutOf(m.Type); !ok {
+			return 0, &Error{off, "member " + m.Name + " of " + st.Name + " is not a scalar or vector (not supported yet)"}
+		}
+		var err error
+		if members[i], err = e.typeID(m.Type, off); err != nil {
+			return 0, err
+		}
+	}
+	id := e.id()
+	inst(&e.decls, OpTypeStruct, append([]uint32{id}, members...)...)
+	for i, m := range st.Members {
+		inst(&e.annot, OpMemberDecorate, id, uint32(i), DecorationOffset, uint32(m.Offset))
+	}
+	e.types[key] = id
+	return id, nil
+}
+
+// glslID is the id of the imported GLSL.std.450 instruction set.
+func (e *emitter) glslID() uint32 {
+	if e.glsl == 0 {
+		e.glsl = e.id()
+	}
+	return e.glsl
 }
 
 func (e *emitter) voidID() uint32 {
@@ -517,6 +584,17 @@ func layoutOf(t wgsl.Type) (size, align int64, ok bool) {
 			return 12, 16, t.Elem.Kind != wgsl.KBool
 		}
 		return 16, 16, t.Elem.Kind != wgsl.KBool
+	case *wgsl.StructType:
+		// A structure of scalars and vectors; the checker's layout gives its size.
+		for _, m := range t.Members {
+			if _, nested := m.Type.(*wgsl.StructType); nested {
+				return 0, 0, false // one level only: members are scalars and vectors
+			}
+			if _, _, ok := layoutOf(m.Type); !ok {
+				return 0, 0, false
+			}
+		}
+		return t.Size, t.Align, !t.Runtime
 	}
 	return 0, 0, false
 }
@@ -554,7 +632,7 @@ func (e *emitter) buffer(v *wgsl.VarObj) (*global, error) {
 		if !ok {
 			return nil, &Error{off, "the elements of " + v.Name + " are not scalars or vectors (not supported yet)"}
 		}
-		el, err := e.typeID(st.Elem, off)
+		el, err := e.memTypeID(st.Elem, off)
 		if err != nil {
 			return nil, err
 		}
@@ -642,11 +720,18 @@ func elemKind(t wgsl.Type) (wgsl.ScalarKind, bool) {
 	return wgsl.KBool, false
 }
 
-func hasCall(x wgsl.Expr) bool {
+// hasUserCall reports whether x calls a function of the module. The built-ins
+// and the constructors are pure (WGSL's integer operations are all defined, and
+// an index is not checked), so skipping them cannot be seen, which is what
+// makes OpLogicalAnd and OpLogicalOr, which do not short-circuit, a faithful
+// && and ||.
+func (e *emitter) hasUserCall(x wgsl.Expr) bool {
 	found := false
 	walkExpr(x, func(y wgsl.Expr) {
-		if _, ok := y.(*wgsl.Call); ok {
-			found = true
+		if c, ok := y.(*wgsl.Call); ok {
+			if _, user := e.info.Objects[c.Fn].(*wgsl.FuncObj); user {
+				found = true
+			}
 		}
 	})
 	return found

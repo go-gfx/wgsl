@@ -1,0 +1,4 @@
+github.com/ebitengine/purego v0.11.3 h1:OB+JLpdm7ioymhyA+6s5kbb/uOuYycAgL8NNTFc5MLg=
+github.com/ebitengine/purego v0.11.3/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
+github.com/go-gfx/vulkan v0.1.0 h1:kMEz7sJXvNbtriUTVh4p0IOx7+QdG+jkE27NFZU8UF8=
+github.com/go-gfx/vulkan v0.1.0/go.mod h1:IYZuEIwS3vtystKZRIp+DtuPWX3Nfq86yMC4gJ5ebhw=

@@ -120,7 +120,41 @@ fn run(@builtin(global_invocation_id) g: vec3<u32>) {
 }
 `
 
-var kernels = []struct{ name, src, entry string }{{"fill", fillSrc, "fill"}, {"rich", richSrc, "rich"}, {"control", controlSrc, "run"}}
+// w2Src exercises what W2 added: signed / and %, f32 to integer conversion,
+// abs, min, max, clamp, length, sqrt, floor, and a whole structure read from a
+// buffer, passed to a function and read member by member.
+const w2Src = `
+struct S { a: i32, b: f32, c: vec2f, d: u32 }
+
+@group(0) @binding(0) var<storage, read> a: array<i32>;
+@group(0) @binding(1) var<storage, read_write> b: array<i32>;
+@group(0) @binding(2) var<storage, read_write> f: array<f32>;
+@group(0) @binding(3) var<storage, read> ss: array<S>;
+
+fn mixs(s: S, k: i32) -> f32 { return f32(s.a + k) + s.b + s.c.x * f32(s.d); }
+
+@compute @workgroup_size(64)
+fn w2(@builtin(global_invocation_id) g: vec3<u32>) {
+  let x = a[g.x];
+  let y = a[g.x + 1u];
+  b[g.x] = x / y + x % y + abs(x) + min(x, y) + max(x, y) + clamp(x, -5, 5);
+  let v = vec2f(f32(x), f32(y));
+  f[g.x] = length(v) + sqrt(abs(f32(x))) + floor(f32(y) * 0.5) + mixs(ss[g.x], x);
+  b[g.x + 1u] = i32(f[g.x]) + i32(u32(f[g.x + 1u]));
+}
+`
+
+var kernels = []struct{ name, src, entry string }{{"fill", fillSrc, "fill"}, {"rich", richSrc, "rich"}, {"control", controlSrc, "run"}, {"w2", w2Src, "w2"}}
+
+// gpu2dKernel is go-gfx/gpu2d's kernel.wgsl, verbatim (gpu2d 3ab6ade, v0.8.0):
+// the whole raster kernel is the proof of W2.
+func init() {
+	b, err := os.ReadFile("../testdata/kernel_gpu2d.wgsl")
+	if err != nil {
+		panic(err)
+	}
+	kernels = append(kernels, struct{ name, src, entry string }{"gpu2d raster", string(b), "raster"})
+}
 
 func check(t *testing.T, src string) (*wgsl.Module, *wgsl.Info) {
 	t.Helper()
@@ -686,11 +720,11 @@ func TestRefusals(t *testing.T) {
 		{"workgroup variable", "var<workgroup> w: u32;\n@compute @workgroup_size(1) fn run() { w = 1u; }", "run", "workgroup"},
 		{"fixed array buffer", "@group(0) @binding(0) var<storage, read_write> a: array<u32, 4>;\n@compute @workgroup_size(1) fn run() { a[0] = 1u; }", "run", "runtime-sized"},
 		{"struct of arrays", "struct S { a: array<vec4u, 2> }\n@group(0) @binding(0) var<uniform> s: S;\n@compute @workgroup_size(1) fn run() { var x = s.a[0].x; }", "run", "scalar or vector"},
-		{"whole struct load", "struct S { a: u32 }\n@group(0) @binding(0) var<storage, read_write> s: array<S>;\n@compute @workgroup_size(1) fn run() { let x = s[0]; }", "run", "scalars or vectors"},
-		{"signed division", buf + "@compute @workgroup_size(1) fn run() { var i = 7; i = i / 2; a[0] = u32(i); }", "run", "division"},
-		{"f32 to u32", buf + "@compute @workgroup_size(1) fn run() { var f = 2.5; a[0] = u32(f); }", "run", "conversion"},
+		{"nested struct in a buffer", "struct I { a: u32 }\nstruct S { i: I }\n@group(0) @binding(0) var<storage, read_write> s: array<S>;\n@compute @workgroup_size(1) fn run() { let x = s[0]; }", "run", "not scalars or vectors"},
+		{"vector signed division", buf + "@compute @workgroup_size(1) fn run() { var v = vec2i(7); v = v / vec2i(2); a[0] = u32(v.x); }", "run", "division"},
+		{"f32 vector to u32 vector", buf + "@compute @workgroup_size(1) fn run() { var v = vec2f(2.5); var w = vec2u(v); a[0] = w.x; }", "run", "constructing"},
 		{"float remainder", buf + "@compute @workgroup_size(1) fn run() { var f = 2.5; f = f % 2.0; a[0] = 1u; }", "run", "remainder"},
-		{"builtin function", buf + "@compute @workgroup_size(1) fn run() { var m = 1u; a[0] = max(m, 2u); }", "run", "builtin max"},
+		{"builtin function", buf + "@compute @workgroup_size(1) fn run() { var m = 1.0; a[0] = u32(sin(m)); }", "run", "builtin sin"},
 		{"vector compare", buf + "@compute @workgroup_size(1) fn run() { var v = vec2f(1.0); if (v.x == 1.0 && all(v == v)) { a[0] = 1u; } }", "run", ""},
 		{"switch", buf + "@compute @workgroup_size(1) fn run() { var i = 0u; switch (i) { default { a[0] = 1u; } } }", "run", "not supported"},
 		{"loop continuing", buf + "@compute @workgroup_size(1) fn run() { var i = 0u; loop { if (i > 3u) { break; } continuing { i++; } } }", "run", "continuing"},
