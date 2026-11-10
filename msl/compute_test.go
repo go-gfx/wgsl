@@ -62,3 +62,16 @@ func TestModuleRefusals(t *testing.T) {
 		}
 	}
 }
+
+// A function may call one declared below it in WGSL; C++ needs it declared
+// first, so the plain functions get prototypes.
+func TestForwardCall(t *testing.T) {
+	m, info := check(t, "fn a() -> u32 { return b() + 1u; }\nfn b() -> u32 { return 2u; }")
+	out, err := Functions(m, info, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i, j := strings.Index(out, "static uint b();"), strings.Index(out, "static uint a() {"); i < 0 || j < 0 || i > j {
+		t.Fatalf("b is not declared before a is defined:\n%s", out)
+	}
+}

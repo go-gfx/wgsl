@@ -131,6 +131,10 @@ generated rather than hand-written. What it adds to the scope above:
   `--` are emitted through `wgsl_add` and `wgsl_sub` so that they wrap; the
   operand is written twice, so one containing a call is refused.
 - **Expressions:** indexing (rule 7), and `u32(f32)` and `i32(f32)` (rule 6).
+- **Order:** WGSL lets a function call one declared further down and C++ does
+  not, so every plain function is declared (a prototype) before any is
+  defined (v0.6.1; v0.6.0 emitted declaration order and failed to compile when
+  a callee came last).
 - **Names:** `main` joins the reserved ones (MSL does not allow a kernel
   called `main`).
 
