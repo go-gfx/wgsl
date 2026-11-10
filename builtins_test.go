@@ -49,6 +49,16 @@ func TestConstEvaluation(t *testing.T) {
 		{"struct const", "struct S { a: i32, b: f32 } const s = S(1, 2.5); const_assert s.a == 1; const_assert s.b == 2.5;", ""},
 		{"u32 wrap", "const a = 0u - 1u; const_assert a == 4294967295u;", ""},
 		{"i32 conversion", "const a = i32(2.9); const b = u32(-1.0); const_assert a == 2; const_assert b == 0u;", ""},
+		// "Floating Point Conversion": the nearest value of the integer type that
+		// is also exactly representable in the source float type. For f32 that
+		// is 4294967040 and 2147483520, not 2^32-1 and 2^31-1; an AbstractFloat
+		// (an f64) holds those, so it saturates at them.
+		{"u32 from f32 saturates at 4294967040", "const a = u32(f32(4294967296.0)); const b = u32(f32(1e10)); const c = u32(f32(4294967040.0)); const_assert a == 4294967040u; const_assert b == 4294967040u; const_assert c == 4294967040u;", ""},
+		{"u32 from f32 below the bound", "const a = u32(f32(4294966784.0)); const_assert a == 4294966784u; const b = u32(f32(-5.0)); const_assert b == 0u;", ""},
+		{"i32 from f32 saturates at 2147483520", "const a = i32(f32(2147483648.0)); const b = i32(f32(1e10)); const c = i32(f32(2147483520.0)); const_assert a == 2147483520; const_assert b == 2147483520; const_assert c == 2147483520;", ""},
+		{"i32 from f32 low end", "const a = i32(f32(-2147483648.0)); const b = i32(f32(-1e10)); const_assert a == -2147483648; const_assert b == -2147483648;", ""},
+		{"u32 from abstract float saturates at 2^32-1", "const a = u32(4294967296.0); const b = u32(1e10); const_assert a == 4294967295u; const_assert b == 4294967295u;", ""},
+		{"i32 from abstract float saturates at 2^31-1", "const a = i32(2147483648.0); const_assert a == 2147483647;", ""},
 		{"i32 range", "const a = i32(3000000000);", "const-overflow"},
 		{"u32 from abstract", "const a = u32(3000000000);", ""},
 		{"f32 overflow conv", "const a = f32(1e39);", "const-overflow"},

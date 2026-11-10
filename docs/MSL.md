@@ -148,9 +148,10 @@ Two more rules, each with its source:
    - **Consequence:** `u32` saturates at 4294967040, the largest `f32` below
      2³², not at 4294967295, which `f32` cannot represent; `i32` saturates at
      2147483520 and −2147483648. The constant evaluator of this package
-     clamps to 4294967295 and 2147483647 for a *constant* conversion: that
-     disagrees with the specification text for an `f32` source, and is not
-     what the emitted code does.
+     clamped to 4294967295 and 2147483647 for a constant conversion of an
+     `f32` until v0.6.2; it now agrees (an AbstractFloat, an f64, still
+     saturates at those two, which it can hold), and `msl/metaltest` compares
+     the evaluator with the GPU.
    - **MSL:** a conversion of an out-of-range float is undefined in C++.
    - **The rule:** `wgsl_f2u` and `wgsl_f2i` in the preamble, which give 0 for
      a NaN. Conversions of `f32` vectors to integer vectors are refused.

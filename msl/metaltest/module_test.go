@@ -3,6 +3,8 @@ package metaltest
 import (
 	"encoding/binary"
 	"math"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-gfx/wgsl"
@@ -290,6 +292,38 @@ func TestComputeFloatToInteger(t *testing.T) {
 		}
 		if g := int32(word(out[1], 2*i+1)); g != int32(s) {
 			t.Errorf("i32(%g) = %d on the GPU, WGSL says %d", v, g, int32(s))
+		}
+	}
+	// The checker's constant evaluator gives the same answers as the GPU (it
+	// once clamped an f32 at 2^32-1 and 2^31-1, which f32 cannot hold).
+	for i, v := range vals {
+		if math.IsInf(float64(v), 0) {
+			continue // not a const-expression
+		}
+		lit := strconv.FormatFloat(float64(v), 'g', -1, 64)
+		if !strings.ContainsAny(lit, ".eE") {
+			lit += ".0"
+		}
+		src := "const u = u32(f32(" + lit + ")); const s = i32(f32(" + lit + "));"
+		m, err := wgsl.Parse(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, errs := wgsl.Check(m)
+		if len(errs) > 0 {
+			t.Fatalf("%s: %v", src, errs)
+		}
+		got := map[string]int64{}
+		for _, d := range m.Decls {
+			if val, ok := d.(*wgsl.Value); ok {
+				got[val.Name] = info.Decls[val].(*wgsl.ValueObj).Val.Int
+			}
+		}
+		if g := word(out[1], 2*i); int64(g) != got["u"] {
+			t.Errorf("const u32(f32(%s)) = %d, the GPU gives %d", lit, got["u"], g)
+		}
+		if g := int32(word(out[1], 2*i+1)); int64(g) != got["s"] {
+			t.Errorf("const i32(f32(%s)) = %d, the GPU gives %d", lit, got["s"], g)
 		}
 	}
 	// A NaN gives an indeterminate value: any, but the kernel must finish.
