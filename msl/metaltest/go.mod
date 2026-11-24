@@ -6,7 +6,7 @@ replace github.com/go-gfx/wgsl => ../..
 
 require (
 	github.com/go-gfx/wgsl v0.9.0
-	github.com/go-macos/metal v0.7.0
+	github.com/go-macos/metal v0.8.0
 )
 
 require (
